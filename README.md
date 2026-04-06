@@ -125,12 +125,8 @@ docker build -f docker/sandbox.Dockerfile -t ai-coding-studio-sandbox:latest .
 <summary>🔧 <strong>方式一：本地开发</strong>（支持热更新）</summary>
 
 ```bash
-# 启动 MySQL
-docker run -d --name ai-coding-studio-mysql \
-  -e MYSQL_ROOT_PASSWORD=root \
-  -e MYSQL_DATABASE=ai_coding_studio \
-  -p 3306:3306 \
-  mysql:8.0
+# 启动 MySQL（复用 docker-compose 配置）
+cd docker && docker compose up -d mysql && cd ..
 
 # 安装依赖
 pnpm install
