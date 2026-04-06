@@ -90,6 +90,7 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
         'claude',
         '-p', task.prompt,
         '--output-format', 'stream-json',
+        '--verbose',
         '--max-turns', '50',
         '--dangerously-skip-permissions',
       ];
