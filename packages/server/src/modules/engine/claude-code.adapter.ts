@@ -16,8 +16,6 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     const socketPath = this.configService.get<string>('DOCKER_SOCKET', '');
     this.docker = socketPath ? new Docker({ socketPath }) : new Docker();
 
-    // Build env vars for Claude Code inside the container
-    // Supports both direct Anthropic API and MiniMax proxy
     this.claudeEnv = [];
     this.claudeModel = '';
 
@@ -27,10 +25,8 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     const model = this.configService.get<string>('ANTHROPIC_MODEL', '');
 
     if (authToken) {
-      // MiniMax proxy mode
       this.claudeEnv.push(`ANTHROPIC_AUTH_TOKEN=${authToken}`);
     } else if (apiKey) {
-      // Direct Anthropic API mode
       this.claudeEnv.push(`ANTHROPIC_API_KEY=${apiKey}`);
     }
 
@@ -42,7 +38,6 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       this.claudeEnv.push(`ANTHROPIC_MODEL=${model}`);
     }
 
-    // Model override env vars — each falls back to ANTHROPIC_MODEL if not set independently
     const modelEnvKeys = [
       'ANTHROPIC_SMALL_FAST_MODEL',
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
@@ -56,7 +51,6 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       }
     }
 
-    // Pass through all optional Claude Code env vars
     const envPassthrough = [
       'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
       'API_TIMEOUT_MS',
@@ -89,21 +83,25 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
 
       const container = this.docker.getContainer(task.sandbox.id);
 
-      // Build claude CLI command
+      // Use -p (prompt mode) with --dangerously-skip-permissions
+      // This runs Claude Code in non-interactive agent mode that ACTUALLY executes tools
+      // Unlike --print which only returns text without taking actions
       const cmd = [
         'claude',
-        '--print',
-        '--output-format', 'json',
+        '-p', task.prompt,
+        '--output-format', 'stream-json',
         '--max-turns', '50',
         '--dangerously-skip-permissions',
       ];
       if (this.claudeModel) {
         cmd.push('--model', this.claudeModel);
       }
-      cmd.push(task.prompt);
 
-      this.logger.log(`[Task ${task.taskId}] Executing claude in sandbox ${task.sandbox.id.substring(0, 12)}`);
+      this.logger.log(`[Task ${task.taskId}] ========== CLAUDE CODE START ==========`);
+      this.logger.log(`[Task ${task.taskId}] Sandbox: ${task.sandbox.id.substring(0, 12)}`);
+      this.logger.log(`[Task ${task.taskId}] Prompt: ${task.prompt}`);
       this.logger.log(`[Task ${task.taskId}] Command: ${cmd.join(' ')}`);
+      this.logger.log(`[Task ${task.taskId}] Env vars: ${this.claudeEnv.map((e) => e.split('=')[0]).join(', ')}`);
 
       const exec = await container.exec({
         Cmd: cmd,
@@ -117,54 +115,19 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
 
       yield { type: 'thinking', content: '正在执行 AI 编码任务...' };
 
-      // Collect output from the container
-      const output = await this.collectOutput(stream);
-
-      if (output.stderr) {
-        this.logger.warn(`Claude Code stderr: ${output.stderr}`);
-      }
-
-      // Try to parse JSON output
-      const lines = output.stdout.trim().split('\n').filter(Boolean);
-
-      for (const line of lines) {
-        try {
-          const parsed = JSON.parse(line);
-          // Claude --print --output-format json outputs result objects
-          if (parsed.type === 'result') {
-            yield {
-              type: 'text',
-              content: parsed.result || parsed.content || line,
-            };
-          } else if (parsed.role === 'assistant') {
-            // Handle assistant messages
-            const content = Array.isArray(parsed.content)
-              ? parsed.content
-                  .map((b: { type: string; text?: string }) =>
-                    b.type === 'text' ? b.text : '',
-                  )
-                  .filter(Boolean)
-                  .join('\n')
-              : String(parsed.content || '');
-            if (content) {
-              yield { type: 'text', content };
-            }
-          } else {
-            yield { type: 'text', content: line };
-          }
-        } catch {
-          // Not JSON, treat as plain text
-          if (line.trim()) {
-            yield { type: 'text', content: line };
-          }
-        }
+      // Stream output in real-time instead of collecting all at once
+      const events = await this.streamOutput(stream, task.taskId);
+      for (const event of events) {
+        yield event;
       }
 
       const inspect = await exec.inspect();
+      this.logger.log(`[Task ${task.taskId}] Claude Code exit code: ${inspect.ExitCode}`);
+
       if (inspect.ExitCode !== 0) {
         yield {
           type: 'error',
-          message: `Claude Code exited with code ${inspect.ExitCode}: ${output.stderr || output.stdout}`,
+          message: `Claude Code exited with code ${inspect.ExitCode}`,
           code: `exit_${inspect.ExitCode}`,
         };
       } else {
@@ -175,6 +138,8 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
           costUsd: 0,
         };
       }
+
+      this.logger.log(`[Task ${task.taskId}] ========== CLAUDE CODE END ==========`);
     } finally {
       this.activeExecs.delete(task.taskId);
     }
@@ -183,14 +148,14 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
   async abort(taskId: string): Promise<void> {
     const active = this.activeExecs.get(taskId);
     if (active) {
-      // Kill any running claude process in the container
       const container = this.docker.getContainer(active.containerId);
       try {
-        await container.exec({
+        const killExec = await container.exec({
           Cmd: ['pkill', '-f', 'claude'],
           AttachStdout: false,
           AttachStderr: false,
         });
+        await killExec.start({ Detach: true });
       } catch {
         // container might be gone
       }
@@ -199,34 +164,129 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     }
   }
 
-  private collectOutput(
+  private streamOutput(
     stream: NodeJS.ReadableStream,
-  ): Promise<{ stdout: string; stderr: string }> {
+    taskId: string,
+  ): Promise<CodingEvent[]> {
     return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-      stream.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        let stdout = '';
-        let stderr = '';
-        let offset = 0;
+      const events: CodingEvent[] = [];
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
 
-        while (offset < buffer.length) {
-          if (offset + 8 > buffer.length) break;
-          const streamType = buffer[offset];
-          const length = buffer.readUInt32BE(offset + 4);
+      const processChunk = (data: Buffer) => {
+        // Docker multiplexed stream: 8-byte header + payload
+        let offset = 0;
+        while (offset < data.length) {
+          if (offset + 8 > data.length) break;
+          const streamType = data[offset];
+          const length = data.readUInt32BE(offset + 4);
           offset += 8;
 
-          if (offset + length > buffer.length) break;
-          const payload = buffer.subarray(offset, offset + length).toString();
-          if (streamType === 1) stdout += payload;
-          else if (streamType === 2) stderr += payload;
+          if (offset + length > data.length) break;
+          const payload = data.subarray(offset, offset + length).toString();
           offset += length;
-        }
 
-        resolve({ stdout, stderr });
+          if (streamType === 1) {
+            // stdout
+            stdoutBuffer += payload;
+            this.logger.log(`[Task ${taskId}] [stdout] ${payload.trimEnd()}`);
+
+            // Try to parse stream-json lines
+            const lines = stdoutBuffer.split('\n');
+            stdoutBuffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              const event = this.parseStreamLine(line, taskId);
+              if (event) events.push(event);
+            }
+          } else if (streamType === 2) {
+            // stderr
+            stderrBuffer += payload;
+            this.logger.warn(`[Task ${taskId}] [stderr] ${payload.trimEnd()}`);
+          }
+        }
+      };
+
+      stream.on('data', processChunk);
+
+      stream.on('end', () => {
+        // Process remaining buffer
+        if (stdoutBuffer.trim()) {
+          const event = this.parseStreamLine(stdoutBuffer, taskId);
+          if (event) events.push(event);
+        }
+        if (stderrBuffer.trim()) {
+          this.logger.warn(`[Task ${taskId}] [stderr final] ${stderrBuffer.trimEnd()}`);
+        }
+        resolve(events);
       });
+
       stream.on('error', reject);
     });
+  }
+
+  private parseStreamLine(line: string, taskId: string): CodingEvent | null {
+    try {
+      const parsed = JSON.parse(line);
+
+      // stream-json format emits different message types
+      if (parsed.type === 'system' && parsed.subtype === 'init') {
+        return {
+          type: 'session_init',
+          sessionId: parsed.session_id || taskId,
+          model: parsed.model || this.claudeModel,
+        };
+      }
+
+      if (parsed.type === 'assistant') {
+        const content = parsed.message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'thinking' && block.thinking) {
+              return { type: 'thinking', content: block.thinking };
+            }
+            if (block.type === 'text' && block.text) {
+              return { type: 'text', content: block.text };
+            }
+            if (block.type === 'tool_use') {
+              return {
+                type: 'tool_use',
+                toolName: block.name,
+                input: block.input ?? {},
+              };
+            }
+          }
+        }
+      }
+
+      if (parsed.type === 'result') {
+        if (parsed.subtype === 'success') {
+          return {
+            type: 'complete',
+            result: parsed.result || 'Done',
+            durationMs: parsed.duration_ms || 0,
+            costUsd: parsed.total_cost_usd || 0,
+          };
+        } else {
+          return {
+            type: 'error',
+            message: parsed.errors?.join('; ') || 'Unknown error',
+            code: parsed.subtype,
+          };
+        }
+      }
+
+      // Fallback: output raw line as text
+      this.logger.log(`[Task ${taskId}] [json] ${line.substring(0, 200)}`);
+      return null;
+    } catch {
+      // Not JSON, output as plain text
+      if (line.trim()) {
+        this.logger.log(`[Task ${taskId}] [raw] ${line.substring(0, 200)}`);
+        return { type: 'text', content: line };
+      }
+      return null;
+    }
   }
 }
