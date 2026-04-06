@@ -190,8 +190,8 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       for (const line of lines) {
         if (!line.trim()) continue;
         this.logger.log(`[Task ${taskId}] [stdout] ${line.substring(0, 300)}`);
-        const event = this.parseStreamLine(line, taskId);
-        if (event) pushEvent(event);
+        const events = this.parseStreamLine(line, taskId);
+        for (const event of events) pushEvent(event);
       }
     };
 
@@ -220,8 +220,8 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       // Process remaining buffer
       if (stdoutBuffer.trim()) {
         this.logger.log(`[Task ${taskId}] [stdout final] ${stdoutBuffer.substring(0, 300)}`);
-        const event = this.parseStreamLine(stdoutBuffer, taskId);
-        if (event) pushEvent(event);
+        const events = this.parseStreamLine(stdoutBuffer, taskId);
+        for (const event of events) pushEvent(event);
       }
       done = true;
       if (resolve) {
@@ -255,16 +255,18 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     }
   }
 
-  private parseStreamLine(line: string, taskId: string): CodingEvent | null {
+  private parseStreamLine(line: string, _taskId: string): CodingEvent[] {
     try {
       const parsed = JSON.parse(line);
+      const events: CodingEvent[] = [];
 
       if (parsed.type === 'system' && parsed.subtype === 'init') {
-        return {
+        events.push({
           type: 'session_init',
-          sessionId: parsed.session_id || taskId,
+          sessionId: parsed.session_id || _taskId,
           model: parsed.model || this.claudeModel,
-        };
+        });
+        return events;
       }
 
       if (parsed.type === 'assistant') {
@@ -272,45 +274,45 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
         if (Array.isArray(content)) {
           for (const block of content) {
             if (block.type === 'thinking' && block.thinking) {
-              return { type: 'thinking', content: block.thinking };
-            }
-            if (block.type === 'text' && block.text) {
-              return { type: 'text', content: block.text };
-            }
-            if (block.type === 'tool_use') {
-              return {
+              events.push({ type: 'thinking', content: block.thinking });
+            } else if (block.type === 'text' && block.text) {
+              events.push({ type: 'text', content: block.text });
+            } else if (block.type === 'tool_use') {
+              events.push({
                 type: 'tool_use',
                 toolName: block.name,
                 input: block.input ?? {},
-              };
+              });
             }
           }
         }
+        return events;
       }
 
       if (parsed.type === 'result') {
         if (parsed.subtype === 'success') {
-          return {
+          events.push({
             type: 'complete',
             result: parsed.result || 'Done',
             durationMs: parsed.duration_ms || 0,
             costUsd: parsed.total_cost_usd || 0,
-          };
+          });
         } else {
-          return {
+          events.push({
             type: 'error',
             message: parsed.errors?.join('; ') || 'Unknown error',
             code: parsed.subtype,
-          };
+          });
         }
+        return events;
       }
 
-      return null;
+      return events;
     } catch {
       if (line.trim()) {
-        return { type: 'text', content: line };
+        return [{ type: 'text', content: line }];
       }
-      return null;
+      return [];
     }
   }
 }
