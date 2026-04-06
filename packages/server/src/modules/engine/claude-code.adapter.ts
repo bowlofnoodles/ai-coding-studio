@@ -9,19 +9,58 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
   private readonly logger = new Logger(ClaudeCodeAdapter.name);
   private docker: Docker;
   private activeExecs = new Map<string, { containerId: string }>();
-  private readonly apiKey: string;
+  private readonly claudeEnv: string[];
+  private readonly claudeModel: string;
 
   constructor(private readonly configService: ConfigService) {
     const socketPath = this.configService.get<string>('DOCKER_SOCKET', '');
     this.docker = socketPath ? new Docker({ socketPath }) : new Docker();
-    this.apiKey = this.configService.get<string>('ANTHROPIC_API_KEY', '');
+
+    // Build env vars for Claude Code inside the container
+    // Supports both direct Anthropic API and MiniMax proxy
+    this.claudeEnv = [];
+    this.claudeModel = '';
+
+    const apiKey = this.configService.get<string>('ANTHROPIC_API_KEY', '');
+    const authToken = this.configService.get<string>('ANTHROPIC_AUTH_TOKEN', '');
+    const baseUrl = this.configService.get<string>('ANTHROPIC_BASE_URL', '');
+    const model = this.configService.get<string>('ANTHROPIC_MODEL', '');
+
+    if (authToken) {
+      // MiniMax proxy mode
+      this.claudeEnv.push(`ANTHROPIC_AUTH_TOKEN=${authToken}`);
+    } else if (apiKey) {
+      // Direct Anthropic API mode
+      this.claudeEnv.push(`ANTHROPIC_API_KEY=${apiKey}`);
+    }
+
+    if (baseUrl) {
+      this.claudeEnv.push(`ANTHROPIC_BASE_URL=${baseUrl}`);
+    }
+    if (model) {
+      this.claudeModel = model;
+      this.claudeEnv.push(`ANTHROPIC_MODEL=${model}`);
+      this.claudeEnv.push(`ANTHROPIC_SMALL_FAST_MODEL=${model}`);
+    }
+
+    // Disable non-essential traffic (recommended for proxy usage)
+    const disableTraffic = this.configService.get<string>('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '');
+    if (disableTraffic) {
+      this.claudeEnv.push(`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${disableTraffic}`);
+    }
+
+    // API timeout
+    const timeout = this.configService.get<string>('API_TIMEOUT_MS', '');
+    if (timeout) {
+      this.claudeEnv.push(`API_TIMEOUT_MS=${timeout}`);
+    }
   }
 
   async *execute(task: CodingTask): AsyncIterable<CodingEvent> {
-    if (!this.apiKey) {
+    if (this.claudeEnv.length === 0) {
       yield {
         type: 'error',
-        message: 'ANTHROPIC_API_KEY not configured in server .env',
+        message: 'Claude Code credentials not configured. Set ANTHROPIC_API_KEY (direct) or ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL (MiniMax proxy) in server .env',
       };
       return;
     }
@@ -32,24 +71,29 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       yield {
         type: 'session_init',
         sessionId: task.taskId,
-        model: 'claude-code',
+        model: this.claudeModel || 'claude-code',
       };
 
       const container = this.docker.getContainer(task.sandbox.id);
 
-      // Run claude CLI in --print mode (non-interactive, JSON output)
+      // Build claude CLI command
+      const cmd = [
+        'claude',
+        '--print',
+        '--output-format', 'json',
+        '--max-turns', '50',
+      ];
+      if (this.claudeModel) {
+        cmd.push('--model', this.claudeModel);
+      }
+      cmd.push(task.prompt);
+
       const exec = await container.exec({
-        Cmd: [
-          'claude',
-          '--print',
-          '--output-format', 'json',
-          '--max-turns', '50',
-          task.prompt,
-        ],
+        Cmd: cmd,
         AttachStdout: true,
         AttachStderr: true,
         WorkingDir: task.sandbox.workDir,
-        Env: [`ANTHROPIC_API_KEY=${this.apiKey}`],
+        Env: this.claudeEnv,
       });
 
       const stream = await exec.start({ Detach: false, Tty: false });
