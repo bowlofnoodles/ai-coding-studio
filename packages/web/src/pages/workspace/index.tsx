@@ -235,16 +235,23 @@ export function WorkspacePage() {
                   </div>
                 )}
 
-                {taskSummary.diffUrl && (
-                  <a
-                    href={taskSummary.diffUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full bg-purple-600 hover:bg-purple-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    🔍 查看完整 Diff
-                    <span className="text-xs opacity-70">↗</span>
-                  </a>
+                {taskSummary.commitUrl && (
+                  <div className="space-y-2">
+                    {taskSummary.commitHash && (
+                      <p className="text-xs text-gray-500 text-center font-mono">
+                        {taskSummary.commitHash.substring(0, 7)}
+                      </p>
+                    )}
+                    <a
+                      href={taskSummary.commitUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full bg-purple-600 hover:bg-purple-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      查看提交
+                      <span className="text-xs opacity-70">↗</span>
+                    </a>
+                  </div>
                 )}
               </div>
             </div>

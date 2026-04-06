@@ -253,21 +253,27 @@ Complete the user's request below. Read the codebase first to understand context
 
         const branch = actualBranch || params.branchName;
 
-        // Get changed files summary
+        // Get latest commit hash and changed files summary
+        const commitResult = await this.sandboxProvider.exec(
+          sandbox,
+          'git rev-parse HEAD 2>/dev/null',
+        );
+        const commitHash = commitResult.stdout.trim();
+
         const logResult = await this.sandboxProvider.exec(
           sandbox,
           'git log --oneline -1 2>/dev/null && git diff HEAD~1 --stat 2>/dev/null || echo "No commits"',
         );
 
-        // Construct GitHub/GitLab diff URL
-        let diffUrl = '';
-        if (params.repoFullName) {
+        // Construct commit URL: https://github.com/{repo}/commit/{hash}
+        let commitUrl = '';
+        if (params.repoFullName && commitHash) {
           const user = await this.authService.findById(params.userId);
           const platform = user?.gitPlatform ?? 'github';
           if (platform === 'github') {
-            diffUrl = `https://github.com/${params.repoFullName}/compare/${params.baseBranch}...${branch}`;
+            commitUrl = `https://github.com/${params.repoFullName}/commit/${commitHash}`;
           } else {
-            diffUrl = `https://gitlab.com/${params.repoFullName}/-/compare/${params.baseBranch}...${branch}`;
+            commitUrl = `https://gitlab.com/${params.repoFullName}/-/commit/${commitHash}`;
           }
         }
 
@@ -275,7 +281,8 @@ Complete the user's request below. Read the codebase first to understand context
         this.streamGateway.emitTaskSummary(taskId, {
           branch,
           baseBranch: params.baseBranch,
-          diffUrl,
+          commitUrl,
+          commitHash,
           changedFiles: logResult.stdout.trim(),
           repoFullName: params.repoFullName,
         });

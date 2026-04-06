@@ -30,7 +30,8 @@ interface TaskBranch {
 export interface TaskSummaryData {
   branch: string;
   baseBranch: string;
-  diffUrl: string;
+  commitUrl: string;
+  commitHash: string;
   changedFiles: string;
   repoFullName: string;
 }
