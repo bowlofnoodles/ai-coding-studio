@@ -20,6 +20,7 @@ interface WorkspaceState {
   currentTaskId: number | null;
   taskStatus: string | null;
   events: CodingEvent[];
+  pastEventGroups: CodingEvent[][];
   previewUrl: string | null;
   isExecuting: boolean;
   error: string | null;
@@ -61,6 +62,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   currentTaskId: null,
   taskStatus: null,
   events: [],
+  pastEventGroups: [],
   previewUrl: null,
   isExecuting: false,
   error: null,
@@ -78,13 +80,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   refreshBranchList: () =>
     set((state) => ({ branchListVersion: state.branchListVersion + 1 })),
   resetExecution: () =>
-    set({
+    set((state) => ({
       currentTaskId: null,
       taskStatus: null,
+      // Archive current events if any, then clear for new task
+      pastEventGroups: state.events.length > 0
+        ? [...state.pastEventGroups, state.events]
+        : state.pastEventGroups,
       events: [],
       previewUrl: null,
       isExecuting: false,
       error: null,
       taskSummary: null,
-    }),
+    })),
 }));
