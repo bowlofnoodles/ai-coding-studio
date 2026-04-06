@@ -13,7 +13,8 @@ export class DockerAdapter implements SandboxProvider {
   private readonly defaultImage: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.docker = new Docker();
+    const socketPath = this.configService.get<string>('DOCKER_SOCKET', '');
+    this.docker = socketPath ? new Docker({ socketPath }) : new Docker();
     this.defaultImage = this.configService.get<string>('SANDBOX_IMAGE', DEFAULT_IMAGE);
   }
 
