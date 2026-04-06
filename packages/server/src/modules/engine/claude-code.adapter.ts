@@ -40,10 +40,20 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     if (model) {
       this.claudeModel = model;
       this.claudeEnv.push(`ANTHROPIC_MODEL=${model}`);
-      this.claudeEnv.push(`ANTHROPIC_SMALL_FAST_MODEL=${model}`);
-      this.claudeEnv.push(`ANTHROPIC_DEFAULT_SONNET_MODEL=${model}`);
-      this.claudeEnv.push(`ANTHROPIC_DEFAULT_OPUS_MODEL=${model}`);
-      this.claudeEnv.push(`ANTHROPIC_DEFAULT_HAIKU_MODEL=${model}`);
+    }
+
+    // Model override env vars — each falls back to ANTHROPIC_MODEL if not set independently
+    const modelEnvKeys = [
+      'ANTHROPIC_SMALL_FAST_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ];
+    for (const key of modelEnvKeys) {
+      const val = this.configService.get<string>(key, '') || model;
+      if (val) {
+        this.claudeEnv.push(`${key}=${val}`);
+      }
     }
 
     // Pass through all optional Claude Code env vars
