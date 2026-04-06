@@ -95,11 +95,15 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
         '--print',
         '--output-format', 'json',
         '--max-turns', '50',
+        '--dangerously-skip-permissions',
       ];
       if (this.claudeModel) {
         cmd.push('--model', this.claudeModel);
       }
       cmd.push(task.prompt);
+
+      this.logger.log(`[Task ${task.taskId}] Executing claude in sandbox ${task.sandbox.id.substring(0, 12)}`);
+      this.logger.log(`[Task ${task.taskId}] Command: ${cmd.join(' ')}`);
 
       const exec = await container.exec({
         Cmd: cmd,

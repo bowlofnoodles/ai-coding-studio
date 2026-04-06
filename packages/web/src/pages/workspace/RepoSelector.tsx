@@ -40,12 +40,20 @@ export function RepoSelector() {
       {selectedRepo && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 w-8 shrink-0">分支</span>
-          <span className="text-sm text-purple-400 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5">
-            {branchName}
-          </span>
-          <span className="text-xs text-gray-600">
-            ← 从 {selectedRepo.defaultBranch} 切出
-          </span>
+          {branchName ? (
+            <>
+              <span className="text-sm text-purple-400 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5">
+                {branchName}
+              </span>
+              <span className="text-xs text-gray-600">
+                ← 从 {selectedRepo.defaultBranch} 切出
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-gray-500">
+              提交任务时自动从 {selectedRepo.defaultBranch} 创建
+            </span>
+          )}
         </div>
       )}
     </div>

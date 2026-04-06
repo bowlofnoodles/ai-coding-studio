@@ -15,12 +15,12 @@ interface Message {
 export function WorkspacePage() {
   const userId = useUserStore((s) => s.userId);
   const selectedRepo = useWorkspaceStore((s) => s.selectedRepo);
-  const branchName = useWorkspaceStore((s) => s.branchName);
   const currentTaskId = useWorkspaceStore((s) => s.currentTaskId);
   const isExecuting = useWorkspaceStore((s) => s.isExecuting);
   const previewUrl = useWorkspaceStore((s) => s.previewUrl);
   const error = useWorkspaceStore((s) => s.error);
 
+  const ensureBranchName = useWorkspaceStore((s) => s.ensureBranchName);
   const setCurrentTask = useWorkspaceStore((s) => s.setCurrentTask);
   const setTaskStatus = useWorkspaceStore((s) => s.setTaskStatus);
   const addEvent = useWorkspaceStore((s) => s.addEvent);
@@ -80,14 +80,15 @@ export function WorkspacePage() {
       setIsExecuting(true);
 
       try {
+        const branch = ensureBranchName();
         const result = await api.tasks.execute({
           userId,
           repoUrl: selectedRepo.cloneUrl,
           repoFullName: selectedRepo.fullName,
-          branchName,
+          branchName: branch,
           baseBranch: selectedRepo.defaultBranch,
           prompt,
-          previewUrlTemplate: `https://${branchName}.preview.example.com`,
+          previewUrlTemplate: `https://${branch}.preview.example.com`,
           apiKey: '',
         });
 
@@ -99,7 +100,7 @@ export function WorkspacePage() {
         setIsExecuting(false);
       }
     },
-    [userId, selectedRepo, branchName, resetExecution, setIsExecuting, setError, setCurrentTask],
+    [userId, selectedRepo, ensureBranchName, resetExecution, setIsExecuting, setError, setCurrentTask, subscribe],
   );
 
   const handleSubmit = useCallback(

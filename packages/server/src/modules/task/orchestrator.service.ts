@@ -86,33 +86,54 @@ export class OrchestratorService {
     let sandbox: Sandbox | null = null;
 
     try {
+      // 1. Setup
+      this.logger.log(`[Task ${taskId}] Starting — repo: ${params.repoFullName}, branch: ${params.branchName}`);
+
       const user = await this.authService.findById(params.userId);
-      if (user) {
-        this.gitProvider.configure(user.gitToken);
+      if (!user) {
+        throw new Error('User not found');
       }
 
-      try {
-        await this.gitProvider.createBranch(
-          params.repoFullName,
-          params.baseBranch,
-          params.branchName,
-        );
-      } catch {
-        this.logger.log(`Branch ${params.branchName} may already exist, continuing`);
-      }
-
+      // 2. Create sandbox
       await this.taskService.updateStatus(taskId, TaskStatus.SANDBOX_READY);
       this.streamGateway.emitTaskStatus(taskId, TaskStatus.SANDBOX_READY);
 
       sandbox = await this.sandboxProvider.create({});
+      this.logger.log(`[Task ${taskId}] Sandbox created: ${sandbox.id.substring(0, 12)}`);
 
-      await this.sandboxProvider.exec(
-        sandbox,
-        `git clone --branch ${params.branchName} ${params.repoUrl} .`,
+      // 3. Clone repo and setup branch inside sandbox
+      this.logger.log(`[Task ${taskId}] Cloning repo into sandbox...`);
+
+      // Construct authenticated clone URL
+      const authedUrl = params.repoUrl.replace(
+        'https://',
+        `https://x-access-token:${user.gitToken}@`,
       );
 
+      // Clone the repo (default branch first)
+      const cloneResult = await this.sandboxProvider.exec(
+        sandbox,
+        `git clone ${authedUrl} . 2>&1`,
+      );
+      this.logger.log(`[Task ${taskId}] Clone result (exit ${cloneResult.exitCode}): ${cloneResult.stdout.substring(0, 200)}`);
+
+      // Try to checkout existing branch, or create new one from base
+      const checkoutResult = await this.sandboxProvider.exec(
+        sandbox,
+        `git checkout ${params.branchName} 2>&1 || git checkout -b ${params.branchName} origin/${params.baseBranch} 2>&1`,
+      );
+      this.logger.log(`[Task ${taskId}] Checkout result (exit ${checkoutResult.exitCode}): ${checkoutResult.stdout.substring(0, 200)}`);
+
+      // Configure git user for commits
+      await this.sandboxProvider.exec(
+        sandbox,
+        'git config user.email "ai-coding-studio@bot" && git config user.name "AI Coding Studio"',
+      );
+
+      // 5. Execute AI coding task
       await this.taskService.updateStatus(taskId, TaskStatus.EXECUTING);
       this.streamGateway.emitTaskStatus(taskId, TaskStatus.EXECUTING);
+      this.logger.log(`[Task ${taskId}] Starting AI execution...`);
 
       const events: string[] = [];
 
@@ -123,15 +144,35 @@ export class OrchestratorService {
       })) {
         this.streamGateway.emitTaskEvent(taskId, event);
         events.push(JSON.stringify(event));
+
+        if (event.type === 'error') {
+          this.logger.error(`[Task ${taskId}] AI Engine error: ${event.message}`);
+        }
       }
 
+      this.logger.log(`[Task ${taskId}] AI execution finished, ${events.length} events`);
+
+      // 6. Check for changes, commit and push only if there are actual modifications
       await this.taskService.updateStatus(taskId, TaskStatus.COMPLETED);
       this.streamGateway.emitTaskStatus(taskId, TaskStatus.COMPLETED);
 
-      await this.sandboxProvider.exec(
-        sandbox,
-        'git add -A && git commit -m "AI coding: task completed" --allow-empty && git push origin HEAD',
-      );
+      // Check if AI made any file changes
+      const diffResult = await this.sandboxProvider.exec(sandbox, 'git status --porcelain');
+      const hasChanges = diffResult.stdout.trim().length > 0;
+
+      if (hasChanges) {
+        this.logger.log(`[Task ${taskId}] Changes detected, committing and pushing...`);
+        const pushResult = await this.sandboxProvider.exec(
+          sandbox,
+          `git add -A && git diff --cached --stat && git commit -m "ai-coding-studio: ${params.prompt.substring(0, 60)}" && git push origin ${params.branchName} 2>&1`,
+        );
+        this.logger.log(`[Task ${taskId}] Push result (exit ${pushResult.exitCode}): ${pushResult.stdout.substring(0, 300)}`);
+        if (pushResult.stderr) {
+          this.logger.warn(`[Task ${taskId}] Push stderr: ${pushResult.stderr.substring(0, 200)}`);
+        }
+      } else {
+        this.logger.log(`[Task ${taskId}] No file changes detected, skipping commit/push`);
+      }
 
       await this.taskService.addMessage({
         taskId: taskId,
@@ -140,39 +181,48 @@ export class OrchestratorService {
         eventsJson: JSON.stringify(events),
       });
 
-      await this.taskService.updateStatus(taskId, TaskStatus.DEPLOYING);
-      this.streamGateway.emitTaskStatus(taskId, TaskStatus.DEPLOYING);
+      // 7. Deploy (skip if previewUrlTemplate is empty or not configured)
+      if (params.previewUrlTemplate && !params.previewUrlTemplate.includes('example.com')) {
+        await this.taskService.updateStatus(taskId, TaskStatus.DEPLOYING);
+        this.streamGateway.emitTaskStatus(taskId, TaskStatus.DEPLOYING);
+        this.logger.log(`[Task ${taskId}] Starting deploy...`);
 
-      let deployResult = await this.deployProvider.deploy({
-        repoFullName: params.repoFullName,
-        branch: params.branchName,
-        previewUrlTemplate: params.previewUrlTemplate,
-      });
+        let deployResult = await this.deployProvider.deploy({
+          repoFullName: params.repoFullName,
+          branch: params.branchName,
+          previewUrlTemplate: params.previewUrlTemplate,
+        });
 
-      let retries = 0;
-      while (deployResult.status === 'failed' && retries < MAX_DEPLOY_RETRIES) {
-        retries++;
-        this.logger.warn(`Deploy failed, retry ${retries}/${MAX_DEPLOY_RETRIES}`);
-        deployResult = await this.deployProvider.retry(deployResult.deployId);
-      }
+        let retries = 0;
+        while (deployResult.status === 'failed' && retries < MAX_DEPLOY_RETRIES) {
+          retries++;
+          this.logger.warn(`[Task ${taskId}] Deploy failed, retry ${retries}/${MAX_DEPLOY_RETRIES}`);
+          deployResult = await this.deployProvider.retry(deployResult.deployId);
+        }
 
-      if (deployResult.status === 'success') {
-        await this.taskService.updateStatus(
-          taskId,
-          TaskStatus.DEPLOYED,
-          deployResult.previewUrl ?? undefined,
-        );
-        this.streamGateway.emitTaskStatus(
-          taskId,
-          TaskStatus.DEPLOYED,
-          deployResult.previewUrl ?? undefined,
-        );
+        if (deployResult.status === 'success') {
+          await this.taskService.updateStatus(
+            taskId,
+            TaskStatus.DEPLOYED,
+            deployResult.previewUrl ?? undefined,
+          );
+          this.streamGateway.emitTaskStatus(
+            taskId,
+            TaskStatus.DEPLOYED,
+            deployResult.previewUrl ?? undefined,
+          );
+        } else {
+          await this.taskService.updateStatus(taskId, TaskStatus.DEPLOY_FAILED);
+          this.streamGateway.emitTaskError(
+            taskId,
+            `Deploy failed after ${MAX_DEPLOY_RETRIES} retries: ${deployResult.logs}`,
+          );
+        }
       } else {
-        await this.taskService.updateStatus(taskId, TaskStatus.DEPLOY_FAILED);
-        this.streamGateway.emitTaskError(
-          taskId,
-          `Deploy failed after ${MAX_DEPLOY_RETRIES} retries: ${deployResult.logs}`,
-        );
+        // No deploy configured, mark as deployed directly
+        this.logger.log(`[Task ${taskId}] No deploy configured, skipping deploy step`);
+        await this.taskService.updateStatus(taskId, TaskStatus.DEPLOYED);
+        this.streamGateway.emitTaskStatus(taskId, TaskStatus.DEPLOYED);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
