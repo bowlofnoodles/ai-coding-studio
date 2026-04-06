@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { GitProviderModule } from './modules/git-provider';
+import { SandboxModule } from './modules/sandbox';
+import { EngineModule } from './modules/engine';
+import { DeployModule } from './modules/deploy';
 
 @Module({
   imports: [
@@ -22,6 +26,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         synchronize: true,
       }),
     }),
+    GitProviderModule,
+    SandboxModule,
+    EngineModule,
+    DeployModule,
   ],
 })
 export class AppModule {}
