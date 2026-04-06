@@ -1,6 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
+    container_name: ai-coding-studio-mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_coding_studio}
@@ -18,12 +19,15 @@ services:
     build:
       context: ..
       dockerfile: docker/server.Dockerfile
+    image: ai-coding-studio-server:latest
+    container_name: ai-coding-studio-server
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USERNAME: ${DB_USERNAME:-root}
       DB_PASSWORD: ${DB_PASSWORD:-root}
       DB_DATABASE: ${DB_DATABASE:-ai_coding_studio}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-ai-coding-studio-sandbox:latest}
     ports:
       - "3001:3001"
     volumes:
@@ -36,6 +40,8 @@ services:
     build:
       context: ..
       dockerfile: docker/web.Dockerfile
+    image: ai-coding-studio-web:latest
+    container_name: ai-coding-studio-web
     ports:
       - "3030:80"
     depends_on:
