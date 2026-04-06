@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './modules/auth';
 import { GitProviderModule } from './modules/git-provider';
 import { SandboxModule } from './modules/sandbox';
 import { EngineModule } from './modules/engine';
 import { DeployModule } from './modules/deploy';
+import { TaskModule } from './modules/task';
+import { StreamModule } from './modules/stream';
 
 @Module({
   imports: [
@@ -26,10 +29,13 @@ import { DeployModule } from './modules/deploy';
         synchronize: true,
       }),
     }),
+    StreamModule,
+    AuthModule,
     GitProviderModule,
     SandboxModule,
     EngineModule,
     DeployModule,
+    TaskModule,
   ],
 })
 export class AppModule {}
