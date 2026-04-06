@@ -27,6 +27,20 @@ interface TaskBranch {
   timestamp: number;
 }
 
+export interface TaskSummaryData {
+  branch: string;
+  baseBranch: string;
+  diffUrl: string;
+  changedFiles: string;
+  repoFullName: string;
+}
+
+interface TaskSummary {
+  taskId: number;
+  summary: TaskSummaryData;
+  timestamp: number;
+}
+
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
 
@@ -89,5 +103,15 @@ export function useSocket() {
     [],
   );
 
-  return { subscribe, unsubscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch };
+  const onTaskSummary = useCallback(
+    (callback: (data: TaskSummary) => void) => {
+      socketRef.current?.on('task:summary', callback);
+      return () => {
+        socketRef.current?.off('task:summary', callback);
+      };
+    },
+    [],
+  );
+
+  return { subscribe, unsubscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, onTaskSummary };
 }

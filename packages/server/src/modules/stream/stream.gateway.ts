@@ -56,6 +56,23 @@ export class StreamGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  emitTaskSummary(
+    taskId: number,
+    summary: {
+      branch: string;
+      baseBranch: string;
+      diffUrl: string;
+      changedFiles: string;
+      repoFullName: string;
+    },
+  ) {
+    this.server.to(`task:${taskId}`).emit('task:summary', {
+      taskId,
+      summary,
+      timestamp: Date.now(),
+    });
+  }
+
   emitTaskStatus(taskId: number, status: string, previewUrl?: string) {
     this.server.to(`task:${taskId}`).emit('task:status', {
       taskId,

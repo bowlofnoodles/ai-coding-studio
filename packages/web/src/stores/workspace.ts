@@ -24,6 +24,13 @@ interface WorkspaceState {
   isExecuting: boolean;
   error: string | null;
   branchListVersion: number;
+  taskSummary: {
+    branch: string;
+    baseBranch: string;
+    diffUrl: string;
+    changedFiles: string;
+    repoFullName: string;
+  } | null;
 
   setCurrentTask: (taskId: number) => void;
   setTaskStatus: (status: string) => void;
@@ -31,6 +38,7 @@ interface WorkspaceState {
   setPreviewUrl: (url: string) => void;
   setError: (error: string | null) => void;
   setIsExecuting: (executing: boolean) => void;
+  setTaskSummary: (summary: WorkspaceState['taskSummary']) => void;
   refreshBranchList: () => void;
   resetExecution: () => void;
 }
@@ -56,6 +64,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isExecuting: false,
   error: null,
   branchListVersion: 0,
+  taskSummary: null,
 
   setCurrentTask: (taskId) => set({ currentTaskId: taskId }),
   setTaskStatus: (status) => set({ taskStatus: status }),
@@ -64,6 +73,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   setPreviewUrl: (previewUrl) => set({ previewUrl }),
   setError: (error) => set({ error }),
   setIsExecuting: (isExecuting) => set({ isExecuting }),
+  setTaskSummary: (taskSummary) => set({ taskSummary }),
   refreshBranchList: () =>
     set((state) => ({ branchListVersion: state.branchListVersion + 1 })),
   resetExecution: () =>
@@ -74,5 +84,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       previewUrl: null,
       isExecuting: false,
       error: null,
+      taskSummary: null,
     }),
 }));

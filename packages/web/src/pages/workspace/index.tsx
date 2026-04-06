@@ -20,9 +20,11 @@ export function WorkspacePage() {
   const isExecuting = useWorkspaceStore((s) => s.isExecuting);
   const previewUrl = useWorkspaceStore((s) => s.previewUrl);
   const error = useWorkspaceStore((s) => s.error);
+  const taskSummary = useWorkspaceStore((s) => s.taskSummary);
 
   const setBranchName = useWorkspaceStore((s) => s.setBranchName);
   const refreshBranchList = useWorkspaceStore((s) => s.refreshBranchList);
+  const setTaskSummary = useWorkspaceStore((s) => s.setTaskSummary);
   const setCurrentTask = useWorkspaceStore((s) => s.setCurrentTask);
   const setTaskStatus = useWorkspaceStore((s) => s.setTaskStatus);
   const addEvent = useWorkspaceStore((s) => s.addEvent);
@@ -33,7 +35,7 @@ export function WorkspacePage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const lastPromptRef = useRef<string>('');
-  const { subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch } = useSocket();
+  const { subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, onTaskSummary } = useSocket();
 
   // Subscribe to task events when taskId changes
   useEffect(() => {
@@ -74,13 +76,20 @@ export function WorkspacePage() {
       }
     });
 
+    const unsub5 = onTaskSummary((data) => {
+      if (data.taskId === currentTaskId) {
+        setTaskSummary(data.summary);
+      }
+    });
+
     return () => {
       unsub1();
       unsub2();
       unsub3();
       unsub4();
+      unsub5();
     };
-  }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting, setBranchName, refreshBranchList]);
+  }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, onTaskSummary, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting, setBranchName, refreshBranchList, setTaskSummary]);
 
   const executeTask = useCallback(
     async (prompt: string) => {
@@ -189,18 +198,61 @@ export function WorkspacePage() {
             )}
           </div>
         </div>
-        <div className="flex-1 bg-white">
+        <div className="flex-1">
           {previewUrl ? (
             <iframe
               src={previewUrl}
-              className="w-full h-full border-0"
+              className="w-full h-full border-0 bg-white"
               title="Preview"
             />
+          ) : taskSummary ? (
+            <div className="h-full bg-gray-900 p-6 overflow-y-auto">
+              <div className="max-w-lg mx-auto space-y-5">
+                <div className="text-center">
+                  <div className="text-3xl mb-2">✅</div>
+                  <h2 className="text-lg font-semibold text-gray-100">任务完成</h2>
+                </div>
+
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">仓库</span>
+                    <span className="text-sm text-gray-300">{taskSummary.repoFullName}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">分支</span>
+                    <span className="text-sm text-purple-400">{taskSummary.branch}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">基准</span>
+                    <span className="text-sm text-gray-400">{taskSummary.baseBranch}</span>
+                  </div>
+                </div>
+
+                {taskSummary.changedFiles && (
+                  <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                    <p className="text-xs text-gray-500 mb-2">变更摘要</p>
+                    <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap">{taskSummary.changedFiles}</pre>
+                  </div>
+                )}
+
+                {taskSummary.diffUrl && (
+                  <a
+                    href={taskSummary.diffUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 w-full bg-purple-600 hover:bg-purple-500 text-white py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    🔍 查看完整 Diff
+                    <span className="text-xs opacity-70">↗</span>
+                  </a>
+                )}
+              </div>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-full bg-gray-900">
               <div className="text-center text-gray-600">
                 <p className="text-lg mb-2">预览区域</p>
-                <p className="text-sm">任务完成后将在此显示预览效果</p>
+                <p className="text-sm">任务完成后将在此显示预览或变更摘要</p>
               </div>
             </div>
           )}

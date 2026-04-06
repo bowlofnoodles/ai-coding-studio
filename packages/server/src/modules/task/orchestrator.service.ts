@@ -248,9 +248,37 @@ Complete the user's request below. Read the codebase first to understand context
           );
         }
       } else {
-        // No deploy configured, mark as deployed directly
-        this.logger.log(`[Task ${taskId}] No deploy configured, skipping deploy step`);
+        // No deploy configured — collect summary and diff info
+        this.logger.log(`[Task ${taskId}] No deploy configured, collecting summary...`);
+
+        const branch = actualBranch || params.branchName;
+
+        // Get changed files summary
+        const logResult = await this.sandboxProvider.exec(
+          sandbox,
+          'git log --oneline -1 2>/dev/null && git diff HEAD~1 --stat 2>/dev/null || echo "No commits"',
+        );
+
+        // Construct GitHub/GitLab diff URL
+        let diffUrl = '';
+        if (params.repoFullName) {
+          const user = await this.authService.findById(params.userId);
+          const platform = user?.gitPlatform ?? 'github';
+          if (platform === 'github') {
+            diffUrl = `https://github.com/${params.repoFullName}/compare/${params.baseBranch}...${branch}`;
+          } else {
+            diffUrl = `https://gitlab.com/${params.repoFullName}/-/compare/${params.baseBranch}...${branch}`;
+          }
+        }
+
         await this.taskService.updateStatus(taskId, TaskStatus.DEPLOYED);
+        this.streamGateway.emitTaskSummary(taskId, {
+          branch,
+          baseBranch: params.baseBranch,
+          diffUrl,
+          changedFiles: logResult.stdout.trim(),
+          repoFullName: params.repoFullName,
+        });
         this.streamGateway.emitTaskStatus(taskId, TaskStatus.DEPLOYED);
       }
     } catch (error) {
