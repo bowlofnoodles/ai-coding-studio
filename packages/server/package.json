@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-coding-studio/shared": "workspace:*",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.92",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.0.0",
     "@nestjs/core": "^10.0.0",
