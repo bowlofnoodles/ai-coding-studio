@@ -19,7 +19,7 @@ export class OrchestratorController {
       apiKey: string;
     },
   ) {
-    this.orchestratorService.executeTask(body);
-    return { status: 'accepted' };
+    const taskId = await this.orchestratorService.createAndExecuteTask(body);
+    return { status: 'accepted', taskId };
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useUserStore } from '@/stores/user';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { useSocket } from '@/hooks/useSocket';
@@ -19,7 +19,9 @@ export function WorkspacePage() {
   const currentTaskId = useWorkspaceStore((s) => s.currentTaskId);
   const isExecuting = useWorkspaceStore((s) => s.isExecuting);
   const previewUrl = useWorkspaceStore((s) => s.previewUrl);
+  const error = useWorkspaceStore((s) => s.error);
 
+  const setCurrentTask = useWorkspaceStore((s) => s.setCurrentTask);
   const setTaskStatus = useWorkspaceStore((s) => s.setTaskStatus);
   const addEvent = useWorkspaceStore((s) => s.addEvent);
   const setPreviewUrl = useWorkspaceStore((s) => s.setPreviewUrl);
@@ -28,9 +30,10 @@ export function WorkspacePage() {
   const resetExecution = useWorkspaceStore((s) => s.resetExecution);
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const lastPromptRef = useRef<string>('');
   const { subscribe, onTaskEvent, onTaskStatus, onTaskError } = useSocket();
 
-  // Subscribe to task events
+  // Subscribe to task events when taskId changes
   useEffect(() => {
     if (!currentTaskId) return;
 
@@ -68,16 +71,16 @@ export function WorkspacePage() {
     };
   }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting]);
 
-  const handleSubmit = useCallback(
+  const executeTask = useCallback(
     async (prompt: string) => {
       if (!userId || !selectedRepo) return;
 
       resetExecution();
-      setMessages((prev) => [...prev, { role: 'user', content: prompt }]);
+      lastPromptRef.current = prompt;
       setIsExecuting(true);
 
       try {
-        await api.tasks.execute({
+        const result = await api.tasks.execute({
           userId,
           repoUrl: selectedRepo.cloneUrl,
           repoFullName: selectedRepo.fullName,
@@ -85,18 +88,33 @@ export function WorkspacePage() {
           baseBranch: selectedRepo.defaultBranch,
           prompt,
           previewUrlTemplate: `https://${branchName}.preview.example.com`,
-          apiKey: '', // Will be configured via settings
+          apiKey: '',
         });
 
-        // The task ID comes back from WebSocket init event
-        // For now we track via status
+        // Subscribe to this task's WebSocket events
+        setCurrentTask(result.taskId);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to execute task');
+        setError(err instanceof Error ? err.message : '任务提交失败');
         setIsExecuting(false);
       }
     },
-    [userId, selectedRepo, branchName, resetExecution, setIsExecuting, setError],
+    [userId, selectedRepo, branchName, resetExecution, setIsExecuting, setError, setCurrentTask],
   );
+
+  const handleSubmit = useCallback(
+    async (prompt: string) => {
+      setMessages((prev) => [...prev, { role: 'user', content: prompt }]);
+      await executeTask(prompt);
+    },
+    [executeTask],
+  );
+
+  const handleRetry = useCallback(() => {
+    if (lastPromptRef.current) {
+      resetExecution();
+      executeTask(lastPromptRef.current);
+    }
+  }, [executeTask, resetExecution]);
 
   return (
     <div className="flex h-full bg-gray-950 text-gray-100">
@@ -104,6 +122,23 @@ export function WorkspacePage() {
       <div className="w-[45%] border-r border-gray-800 flex flex-col">
         <RepoSelector />
         <ChatPanel messages={messages} />
+
+        {/* Error display with retry */}
+        {error && !isExecuting && (
+          <div className="mx-3 mb-2 bg-red-900/20 border border-red-800 rounded-lg p-3 flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-red-400 font-medium mb-1">任务执行失败</p>
+              <p className="text-xs text-red-300/80 break-all">{error}</p>
+            </div>
+            <button
+              className="shrink-0 text-xs bg-red-800/50 hover:bg-red-800 text-red-200 px-3 py-1.5 rounded transition-colors"
+              onClick={handleRetry}
+            >
+              重试
+            </button>
+          </div>
+        )}
+
         <PromptInput
           onSubmit={handleSubmit}
           disabled={isExecuting || !selectedRepo}

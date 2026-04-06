@@ -52,7 +52,7 @@ export const api = {
       previewUrlTemplate: string;
       apiKey: string;
     }) =>
-      request<{ status: string }>('/orchestrator/execute', {
+      request<{ status: string; taskId: number }>('/orchestrator/execute', {
         method: 'POST',
         body: JSON.stringify(data),
       }),

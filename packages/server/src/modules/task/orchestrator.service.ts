@@ -35,7 +35,7 @@ export class OrchestratorService {
     private readonly deployProvider: DeployProvider,
   ) {}
 
-  async executeTask(params: {
+  async createAndExecuteTask(params: {
     userId: number;
     repoUrl: string;
     repoFullName: string;
@@ -44,7 +44,7 @@ export class OrchestratorService {
     prompt: string;
     previewUrlTemplate: string;
     apiKey: string;
-  }): Promise<void> {
+  }): Promise<number> {
     const task = await this.taskService.create({
       userId: params.userId,
       repoUrl: params.repoUrl,
@@ -59,6 +59,27 @@ export class OrchestratorService {
       content: params.prompt,
     });
 
+    // Fire and forget — execute async, errors are pushed via WebSocket
+    this.runTask(task.id, params).catch((error) => {
+      this.logger.error(`Task ${task.id} uncaught error: ${error}`);
+    });
+
+    return task.id;
+  }
+
+  private async runTask(
+    taskId: number,
+    params: {
+      userId: number;
+      repoUrl: string;
+      repoFullName: string;
+      branchName: string;
+      baseBranch: string;
+      prompt: string;
+      previewUrlTemplate: string;
+      apiKey: string;
+    },
+  ): Promise<void> {
     let sandbox: Sandbox | null = null;
 
     try {
@@ -77,8 +98,8 @@ export class OrchestratorService {
         this.logger.log(`Branch ${params.branchName} may already exist, continuing`);
       }
 
-      await this.taskService.updateStatus(task.id, TaskStatus.SANDBOX_READY);
-      this.streamGateway.emitTaskStatus(task.id, TaskStatus.SANDBOX_READY);
+      await this.taskService.updateStatus(taskId, TaskStatus.SANDBOX_READY);
+      this.streamGateway.emitTaskStatus(taskId, TaskStatus.SANDBOX_READY);
 
       sandbox = await this.sandboxProvider.create({});
 
@@ -87,23 +108,23 @@ export class OrchestratorService {
         `git clone --branch ${params.branchName} ${params.repoUrl} .`,
       );
 
-      await this.taskService.updateStatus(task.id, TaskStatus.EXECUTING);
-      this.streamGateway.emitTaskStatus(task.id, TaskStatus.EXECUTING);
+      await this.taskService.updateStatus(taskId, TaskStatus.EXECUTING);
+      this.streamGateway.emitTaskStatus(taskId, TaskStatus.EXECUTING);
 
       const events: string[] = [];
 
       for await (const event of this.engineProvider.execute({
-        taskId: String(task.id),
+        taskId: String(taskId),
         prompt: params.prompt,
         workDir: sandbox.workDir,
         apiKey: params.apiKey,
       })) {
-        this.streamGateway.emitTaskEvent(task.id, event);
+        this.streamGateway.emitTaskEvent(taskId, event);
         events.push(JSON.stringify(event));
       }
 
-      await this.taskService.updateStatus(task.id, TaskStatus.COMPLETED);
-      this.streamGateway.emitTaskStatus(task.id, TaskStatus.COMPLETED);
+      await this.taskService.updateStatus(taskId, TaskStatus.COMPLETED);
+      this.streamGateway.emitTaskStatus(taskId, TaskStatus.COMPLETED);
 
       await this.sandboxProvider.exec(
         sandbox,
@@ -111,14 +132,14 @@ export class OrchestratorService {
       );
 
       await this.taskService.addMessage({
-        taskId: task.id,
+        taskId: taskId,
         role: 'ai',
         content: 'Task completed',
         eventsJson: JSON.stringify(events),
       });
 
-      await this.taskService.updateStatus(task.id, TaskStatus.DEPLOYING);
-      this.streamGateway.emitTaskStatus(task.id, TaskStatus.DEPLOYING);
+      await this.taskService.updateStatus(taskId, TaskStatus.DEPLOYING);
+      this.streamGateway.emitTaskStatus(taskId, TaskStatus.DEPLOYING);
 
       let deployResult = await this.deployProvider.deploy({
         repoFullName: params.repoFullName,
@@ -135,27 +156,27 @@ export class OrchestratorService {
 
       if (deployResult.status === 'success') {
         await this.taskService.updateStatus(
-          task.id,
+          taskId,
           TaskStatus.DEPLOYED,
           deployResult.previewUrl ?? undefined,
         );
         this.streamGateway.emitTaskStatus(
-          task.id,
+          taskId,
           TaskStatus.DEPLOYED,
           deployResult.previewUrl ?? undefined,
         );
       } else {
-        await this.taskService.updateStatus(task.id, TaskStatus.DEPLOY_FAILED);
+        await this.taskService.updateStatus(taskId, TaskStatus.DEPLOY_FAILED);
         this.streamGateway.emitTaskError(
-          task.id,
+          taskId,
           `Deploy failed after ${MAX_DEPLOY_RETRIES} retries: ${deployResult.logs}`,
         );
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Task ${task.id} failed: ${message}`);
-      await this.taskService.updateStatus(task.id, TaskStatus.FAILED);
-      this.streamGateway.emitTaskError(task.id, message);
+      this.logger.error(`Task ${taskId} failed: ${message}`);
+      await this.taskService.updateStatus(taskId, TaskStatus.FAILED);
+      this.streamGateway.emitTaskError(taskId, message);
     } finally {
       if (sandbox) {
         try {
