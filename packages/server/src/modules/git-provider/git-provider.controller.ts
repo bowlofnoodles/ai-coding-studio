@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Query,
+  Param,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -32,5 +33,23 @@ export class GitProviderController {
 
     this.gitHubAdapter.configure(user.gitToken);
     return this.gitHubAdapter.listRepos();
+  }
+
+  @Get('branches')
+  async listBranches(
+    @Query('repo') repoFullName: string,
+    @Query('userId') userId: string,
+  ) {
+    if (!userId || !repoFullName) {
+      throw new BadRequestException('userId and repo are required');
+    }
+
+    const user = await this.authService.findById(Number(userId));
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    this.gitHubAdapter.configure(user.gitToken);
+    return this.gitHubAdapter.listBranches(repoFullName);
   }
 }

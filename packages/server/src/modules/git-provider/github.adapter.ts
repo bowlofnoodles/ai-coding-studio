@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Octokit } from '@octokit/rest';
 import { execSync } from 'child_process';
-import { GitProvider, Repo } from './git-provider.interface';
+import { GitProvider, Repo, Branch } from './git-provider.interface';
 
 @Injectable()
 export class GitHubAdapter implements GitProvider {
@@ -30,6 +30,23 @@ export class GitHubAdapter implements GitProvider {
       fullName: repo.full_name,
       cloneUrl: repo.clone_url ?? '',
       defaultBranch: repo.default_branch ?? 'main',
+    }));
+  }
+
+  async listBranches(repoFullName: string): Promise<Branch[]> {
+    const [owner, repo] = repoFullName.split('/');
+    const { data: repoData } = await this.octokit.repos.get({ owner, repo });
+    const defaultBranch = repoData.default_branch;
+
+    const { data } = await this.octokit.repos.listBranches({
+      owner,
+      repo,
+      per_page: 100,
+    });
+
+    return data.map((branch) => ({
+      name: branch.name,
+      isDefault: branch.name === defaultBranch,
     }));
   }
 

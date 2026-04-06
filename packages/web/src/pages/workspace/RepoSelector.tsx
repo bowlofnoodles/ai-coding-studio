@@ -8,6 +8,11 @@ interface UserConfig {
   aiEnginePreference: string;
 }
 
+interface Branch {
+  name: string;
+  isDefault: boolean;
+}
+
 export function RepoSelector() {
   const userId = useUserStore((s) => s.userId);
   const repos = useWorkspaceStore((s) => s.repos);
@@ -19,6 +24,8 @@ export function RepoSelector() {
   const selectRepo = useWorkspaceStore((s) => s.selectRepo);
   const setBranchName = useWorkspaceStore((s) => s.setBranchName);
   const [userConfig, setUserConfig] = useState<UserConfig | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [loadingBranches, setLoadingBranches] = useState(false);
 
   useEffect(() => {
     if (userId) {
@@ -32,12 +39,24 @@ export function RepoSelector() {
     }
   }, [userId, setRepos]);
 
+  useEffect(() => {
+    if (userId && selectedRepo) {
+      setLoadingBranches(true);
+      api.repos
+        .listBranches(selectedRepo.fullName, userId)
+        .then(setBranches)
+        .catch(console.error)
+        .finally(() => setLoadingBranches(false));
+    } else {
+      setBranches([]);
+    }
+  }, [userId, selectedRepo]);
+
   const platformLabel = userConfig?.gitPlatform === 'gitlab' ? 'GitLab' : 'GitHub';
   const engineLabel = userConfig?.aiEnginePreference === 'claude-code' ? 'Claude Code' : userConfig?.aiEnginePreference ?? '-';
 
   return (
     <div className="border-b border-gray-800 bg-gray-900/50 p-3 space-y-2">
-      {/* Config info bar */}
       {userConfig && (
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <span className="flex items-center gap-1">
@@ -68,7 +87,6 @@ export function RepoSelector() {
         </div>
       )}
 
-      {/* Repo selector */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500 w-8 shrink-0">仓库</span>
         <select
@@ -89,26 +107,24 @@ export function RepoSelector() {
         </select>
       </div>
 
-      {/* Branch input */}
       {selectedRepo && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 w-8 shrink-0">分支</span>
-          <input
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 outline-none focus:border-purple-500 placeholder-gray-500"
-            placeholder="留空则自动生成语义化分支名"
+          <select
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 outline-none focus:border-purple-500"
             value={branchName}
             onChange={(e) => setBranchName(e.target.value)}
-            disabled={isExecuting}
-          />
-          {branchName && (
-            <button
-              className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-              onClick={() => setBranchName('')}
-              disabled={isExecuting}
-              title="清空，提交时自动生成"
-            >
-              清空
-            </button>
+            disabled={isExecuting || loadingBranches}
+          >
+            <option value="">新建分支（从 {selectedRepo.defaultBranch} 自动创建）</option>
+            {branches.map((branch) => (
+              <option key={branch.name} value={branch.name}>
+                {branch.name}{branch.isDefault ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+          {loadingBranches && (
+            <span className="text-xs text-gray-500">加载中...</span>
           )}
         </div>
       )}

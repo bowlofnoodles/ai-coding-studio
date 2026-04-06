@@ -60,5 +60,7 @@ export const api = {
   repos: {
     list: (userId: number) =>
       request<Array<{ id: string; name: string; fullName: string; cloneUrl: string; defaultBranch: string }>>(`/repos?userId=${userId}`),
+    listBranches: (repoFullName: string, userId: number) =>
+      request<Array<{ name: string; isDefault: boolean }>>(`/repos/branches?repo=${encodeURIComponent(repoFullName)}&userId=${userId}`),
   },
 };

@@ -6,8 +6,14 @@ export interface Repo {
   defaultBranch: string;
 }
 
+export interface Branch {
+  name: string;
+  isDefault: boolean;
+}
+
 export interface GitProvider {
   listRepos(): Promise<Repo[]>;
+  listBranches(repoFullName: string): Promise<Branch[]>;
   cloneRepo(cloneUrl: string, targetDir: string): Promise<void>;
   createBranch(repoFullName: string, baseBranch: string, newBranch: string): Promise<void>;
   commitAndPush(repoDir: string, branch: string, message: string): Promise<void>;

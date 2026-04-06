@@ -121,31 +121,48 @@ export class OrchestratorService {
         'git config user.email "ai-coding-studio@bot" && git config user.name "AI Coding Studio"',
       );
 
-      // 4. Determine branch name
-      let branchName = params.branchName;
-
-      if (!branchName) {
-        // Generate branch name from prompt keywords
-        const slug = params.prompt
-          .replace(/[^a-zA-Z0-9]/g, '-')
-          .replace(/-+/g, '-')
-          .replace(/^-|-$/g, '')
-          .toLowerCase()
-          .substring(0, 30)
-          .replace(/-$/, '');
-        branchName = `ai-studio/${slug || 'task'}-${taskId}`;
-        this.logger.log(`[Task ${taskId}] Generated branch name: ${branchName}`);
-
-        await this.taskService.updateBranchName(taskId, branchName);
-        this.streamGateway.emitTaskBranchName(taskId, branchName);
+      // If user selected an existing branch, checkout it
+      if (params.branchName) {
+        const checkoutResult = await this.sandboxProvider.exec(
+          sandbox,
+          `git checkout ${params.branchName} 2>&1`,
+        );
+        this.logger.log(`[Task ${taskId}] Checkout existing branch: ${params.branchName} (exit ${checkoutResult.exitCode})`);
       }
 
-      // 5. Checkout branch (existing or new)
-      const checkoutResult = await this.sandboxProvider.exec(
+      // 4. Write CLAUDE.md to instruct Claude Code on git workflow
+      const branchInstruction = params.branchName
+        ? `You are on branch "${params.branchName}". Work on this branch directly.`
+        : `You are on the default branch. Create a new branch from it with a semantic name prefixed with "ai-studio/" (e.g. ai-studio/fix-header-height). The branch name should be descriptive of the task in English, lowercase, hyphens only.`;
+
+      const claudeMd = `# AI Coding Studio Instructions
+
+## Git Workflow (MANDATORY)
+
+${branchInstruction}
+
+After completing the coding task, you MUST:
+1. If you created a new branch, you are already on it.
+2. Stage all changes: \`git add -A\`
+3. Commit with a clear message describing what was changed.
+4. Push to remote: \`git push origin HEAD\`
+
+If there are no file changes, skip commit and push.
+
+IMPORTANT:
+- Always complete the git workflow (commit + push) before finishing.
+- Use meaningful commit messages.
+- Do NOT ask for permission — just do it.
+
+## Task
+Complete the user's request below. Read the codebase first to understand context, then make the changes.
+`;
+
+      await this.sandboxProvider.exec(
         sandbox,
-        `git checkout ${branchName} 2>&1 || git checkout -b ${branchName} origin/${params.baseBranch} 2>&1`,
+        `cat > CLAUDE.md << 'CLAUDE_MD_EOF'\n${claudeMd}\nCLAUDE_MD_EOF`,
       );
-      this.logger.log(`[Task ${taskId}] Checkout result (exit ${checkoutResult.exitCode}): ${checkoutResult.stdout.substring(0, 200)}`);
+      this.logger.log(`[Task ${taskId}] CLAUDE.md written to sandbox`);
 
       // 5. Execute AI coding task
       await this.taskService.updateStatus(taskId, TaskStatus.EXECUTING);
@@ -169,27 +186,22 @@ export class OrchestratorService {
 
       this.logger.log(`[Task ${taskId}] AI execution finished, ${events.length} events`);
 
-      // 6. Check for changes, commit and push only if there are actual modifications
+      // 6. Read branch name from sandbox (Claude Code may have created a new one)
+      const branchResult = await this.sandboxProvider.exec(
+        sandbox,
+        'git branch --show-current',
+      );
+      const actualBranch = branchResult.stdout.trim();
+      this.logger.log(`[Task ${taskId}] Current branch after execution: ${actualBranch}`);
+
+      // Update task with actual branch name if it changed
+      if (actualBranch && actualBranch !== params.branchName) {
+        await this.taskService.updateBranchName(taskId, actualBranch);
+        this.streamGateway.emitTaskBranchName(taskId, actualBranch);
+      }
+
       await this.taskService.updateStatus(taskId, TaskStatus.COMPLETED);
       this.streamGateway.emitTaskStatus(taskId, TaskStatus.COMPLETED);
-
-      // Check if AI made any file changes
-      const diffResult = await this.sandboxProvider.exec(sandbox, 'git status --porcelain');
-      const hasChanges = diffResult.stdout.trim().length > 0;
-
-      if (hasChanges) {
-        this.logger.log(`[Task ${taskId}] Changes detected, committing and pushing...`);
-        const pushResult = await this.sandboxProvider.exec(
-          sandbox,
-          `git add -A && git diff --cached --stat && git commit -m "ai-coding-studio: ${params.prompt.substring(0, 60)}" && git push origin ${branchName} 2>&1`,
-        );
-        this.logger.log(`[Task ${taskId}] Push result (exit ${pushResult.exitCode}): ${pushResult.stdout.substring(0, 300)}`);
-        if (pushResult.stderr) {
-          this.logger.warn(`[Task ${taskId}] Push stderr: ${pushResult.stderr.substring(0, 200)}`);
-        }
-      } else {
-        this.logger.log(`[Task ${taskId}] No file changes detected, skipping commit/push`);
-      }
 
       await this.taskService.addMessage({
         taskId: taskId,
