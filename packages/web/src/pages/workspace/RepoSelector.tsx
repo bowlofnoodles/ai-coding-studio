@@ -24,6 +24,7 @@ export function RepoSelector() {
   const selectRepo = useWorkspaceStore((s) => s.selectRepo);
   const setBranchName = useWorkspaceStore((s) => s.setBranchName);
   const [userConfig, setUserConfig] = useState<UserConfig | null>(null);
+  const branchListVersion = useWorkspaceStore((s) => s.branchListVersion);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
 
@@ -50,7 +51,7 @@ export function RepoSelector() {
     } else {
       setBranches([]);
     }
-  }, [userId, selectedRepo]);
+  }, [userId, selectedRepo, branchListVersion]);
 
   const platformLabel = userConfig?.gitPlatform === 'gitlab' ? 'GitLab' : 'GitHub';
   const engineLabel = userConfig?.aiEnginePreference === 'claude-code' ? 'Claude Code' : userConfig?.aiEnginePreference ?? '-';

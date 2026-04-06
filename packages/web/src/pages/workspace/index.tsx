@@ -22,6 +22,7 @@ export function WorkspacePage() {
   const error = useWorkspaceStore((s) => s.error);
 
   const setBranchName = useWorkspaceStore((s) => s.setBranchName);
+  const refreshBranchList = useWorkspaceStore((s) => s.refreshBranchList);
   const setCurrentTask = useWorkspaceStore((s) => s.setCurrentTask);
   const setTaskStatus = useWorkspaceStore((s) => s.setTaskStatus);
   const addEvent = useWorkspaceStore((s) => s.addEvent);
@@ -54,6 +55,7 @@ export function WorkspacePage() {
         }
         if (data.status === 'deployed' || data.status === 'deploy_failed' || data.status === 'failed') {
           setIsExecuting(false);
+          refreshBranchList();
         }
       }
     });
@@ -68,6 +70,7 @@ export function WorkspacePage() {
     const unsub4 = onTaskBranch((data) => {
       if (data.taskId === currentTaskId) {
         setBranchName(data.branchName);
+        refreshBranchList();
       }
     });
 
@@ -77,7 +80,7 @@ export function WorkspacePage() {
       unsub3();
       unsub4();
     };
-  }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting, setBranchName]);
+  }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting, setBranchName, refreshBranchList]);
 
   const executeTask = useCallback(
     async (prompt: string) => {
