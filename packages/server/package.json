@@ -9,19 +9,20 @@
     "start:prod": "node dist/main"
   },
   "dependencies": {
+    "@ai-coding-studio/shared": "workspace:*",
     "@nestjs/common": "^10.0.0",
+    "@nestjs/config": "^3.0.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/platform-socket.io": "^10.0.0",
     "@nestjs/typeorm": "^10.0.0",
     "@nestjs/websockets": "^10.0.0",
-    "@nestjs/platform-socket.io": "^10.0.0",
-    "@nestjs/config": "^3.0.0",
-    "typeorm": "^0.3.20",
+    "@octokit/rest": "^22.0.1",
     "mysql2": "^3.9.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
     "socket.io": "^4.7.0",
-    "@ai-coding-studio/shared": "workspace:*"
+    "typeorm": "^0.3.20"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
