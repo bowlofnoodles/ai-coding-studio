@@ -34,7 +34,7 @@ export class TaskEntity {
   @Column({ length: 30, default: 'pending' })
   status: string;
 
-  @Column({ name: 'preview_url', length: 500, nullable: true })
+  @Column({ name: 'preview_url', type: 'varchar', length: 500, nullable: true })
   previewUrl: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
