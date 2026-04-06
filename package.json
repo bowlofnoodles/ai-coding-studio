@@ -1,0 +1,14 @@
+{
+  "name": "ai-coding-studio",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @ai-coding-studio/web dev",
+    "dev:server": "pnpm --filter @ai-coding-studio/server start:dev",
+    "build:web": "pnpm --filter @ai-coding-studio/web build",
+    "build:server": "pnpm --filter @ai-coding-studio/server build",
+    "build:shared": "pnpm --filter @ai-coding-studio/shared build"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
