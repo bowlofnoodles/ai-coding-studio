@@ -99,7 +99,7 @@ export function WorkspacePage() {
   );
 
   return (
-    <div className="flex h-screen bg-gray-950 text-gray-100">
+    <div className="flex h-full bg-gray-950 text-gray-100">
       {/* Left: Chat + Execution */}
       <div className="w-[45%] border-r border-gray-800 flex flex-col">
         <RepoSelector />
