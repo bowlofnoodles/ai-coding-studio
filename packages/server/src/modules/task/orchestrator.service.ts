@@ -125,30 +125,18 @@ export class OrchestratorService {
       let branchName = params.branchName;
 
       if (!branchName) {
-        // Generate semantic branch name using Claude inside sandbox
-        this.logger.log(`[Task ${taskId}] Generating branch name from prompt...`);
-        const genResult = await this.sandboxProvider.exec(
-          sandbox,
-          `claude -p "Based on this task description, generate a short git branch name (lowercase, hyphens, no spaces, max 40 chars, prefix with ai-studio/). Task: ${params.prompt.replace(/"/g, '\\"').substring(0, 200)}. Reply with ONLY the branch name, nothing else." --dangerously-skip-permissions --max-turns 1 2>&1 | tail -1`,
-        );
-        const generated = genResult.stdout.trim();
-        if (generated && generated.startsWith('ai-studio/') && !generated.includes(' ')) {
-          branchName = generated;
-        } else {
-          // Fallback: simple slug from prompt
-          const slug = params.prompt
-            .replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '-')
-            .replace(/-+/g, '-')
-            .substring(0, 30)
-            .replace(/-$/, '');
-          branchName = `ai-studio/${slug || Date.now()}`;
-        }
+        // Generate branch name from prompt keywords
+        const slug = params.prompt
+          .replace(/[^a-zA-Z0-9]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
+          .toLowerCase()
+          .substring(0, 30)
+          .replace(/-$/, '');
+        branchName = `ai-studio/${slug || 'task'}-${taskId}`;
         this.logger.log(`[Task ${taskId}] Generated branch name: ${branchName}`);
 
-        // Update task record with the generated branch name
         await this.taskService.updateBranchName(taskId, branchName);
-
-        // Notify frontend of the branch name
         this.streamGateway.emitTaskBranchName(taskId, branchName);
       }
 

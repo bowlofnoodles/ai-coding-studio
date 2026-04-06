@@ -83,9 +83,6 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
 
       const container = this.docker.getContainer(task.sandbox.id);
 
-      // Use -p (prompt mode) with --dangerously-skip-permissions
-      // This runs Claude Code in non-interactive agent mode that ACTUALLY executes tools
-      // Unlike --print which only returns text without taking actions
       const cmd = [
         'claude',
         '-p', task.prompt,
@@ -102,7 +99,6 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       this.logger.log(`[Task ${task.taskId}] Sandbox: ${task.sandbox.id.substring(0, 12)}`);
       this.logger.log(`[Task ${task.taskId}] Prompt: ${task.prompt}`);
       this.logger.log(`[Task ${task.taskId}] Command: ${cmd.join(' ')}`);
-      this.logger.log(`[Task ${task.taskId}] Env vars: ${this.claudeEnv.map((e) => e.split('=')[0]).join(', ')}`);
 
       const exec = await container.exec({
         Cmd: cmd,
@@ -116,9 +112,8 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
 
       yield { type: 'thinking', content: '正在执行 AI 编码任务...' };
 
-      // Stream output in real-time instead of collecting all at once
-      const events = await this.streamOutput(stream, task.taskId);
-      for (const event of events) {
+      // Real-time streaming via async generator
+      for await (const event of this.streamEvents(stream, task.taskId)) {
         yield event;
       }
 
@@ -165,73 +160,105 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     }
   }
 
-  private streamOutput(
+  /**
+   * Async generator that yields CodingEvents as they arrive from the Docker stream.
+   * This is truly streaming - events are yielded immediately when received.
+   */
+  private async *streamEvents(
     stream: NodeJS.ReadableStream,
     taskId: string,
-  ): Promise<CodingEvent[]> {
-    return new Promise((resolve, reject) => {
-      const events: CodingEvent[] = [];
-      let stdoutBuffer = '';
-      let stderrBuffer = '';
+  ): AsyncGenerator<CodingEvent> {
+    // Use a queue + resolve pattern for async iteration over stream events
+    const queue: CodingEvent[] = [];
+    let resolve: (() => void) | null = null;
+    let done = false;
+    let stdoutBuffer = '';
 
-      const processChunk = (data: Buffer) => {
-        // Docker multiplexed stream: 8-byte header + payload
-        let offset = 0;
-        while (offset < data.length) {
-          if (offset + 8 > data.length) break;
-          const streamType = data[offset];
-          const length = data.readUInt32BE(offset + 4);
-          offset += 8;
+    const pushEvent = (event: CodingEvent) => {
+      queue.push(event);
+      if (resolve) {
+        resolve();
+        resolve = null;
+      }
+    };
 
-          if (offset + length > data.length) break;
-          const payload = data.subarray(offset, offset + length).toString();
-          offset += length;
+    const processPayload = (payload: string) => {
+      stdoutBuffer += payload;
+      const lines = stdoutBuffer.split('\n');
+      stdoutBuffer = lines.pop() ?? '';
 
-          if (streamType === 1) {
-            // stdout
-            stdoutBuffer += payload;
-            this.logger.log(`[Task ${taskId}] [stdout] ${payload.trimEnd()}`);
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        this.logger.log(`[Task ${taskId}] [stdout] ${line.substring(0, 300)}`);
+        const event = this.parseStreamLine(line, taskId);
+        if (event) pushEvent(event);
+      }
+    };
 
-            // Try to parse stream-json lines
-            const lines = stdoutBuffer.split('\n');
-            stdoutBuffer = lines.pop() ?? '';
+    stream.on('data', (chunk: Buffer) => {
+      // Docker multiplexed stream: 8-byte header + payload
+      let offset = 0;
+      while (offset < chunk.length) {
+        if (offset + 8 > chunk.length) break;
+        const streamType = chunk[offset];
+        const length = chunk.readUInt32BE(offset + 4);
+        offset += 8;
 
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              const event = this.parseStreamLine(line, taskId);
-              if (event) events.push(event);
-            }
-          } else if (streamType === 2) {
-            // stderr
-            stderrBuffer += payload;
-            this.logger.warn(`[Task ${taskId}] [stderr] ${payload.trimEnd()}`);
-          }
+        if (offset + length > chunk.length) break;
+        const payload = chunk.subarray(offset, offset + length).toString();
+        offset += length;
+
+        if (streamType === 1) {
+          processPayload(payload);
+        } else if (streamType === 2) {
+          this.logger.warn(`[Task ${taskId}] [stderr] ${payload.trimEnd()}`);
         }
-      };
-
-      stream.on('data', processChunk);
-
-      stream.on('end', () => {
-        // Process remaining buffer
-        if (stdoutBuffer.trim()) {
-          const event = this.parseStreamLine(stdoutBuffer, taskId);
-          if (event) events.push(event);
-        }
-        if (stderrBuffer.trim()) {
-          this.logger.warn(`[Task ${taskId}] [stderr final] ${stderrBuffer.trimEnd()}`);
-        }
-        resolve(events);
-      });
-
-      stream.on('error', reject);
+      }
     });
+
+    stream.on('end', () => {
+      // Process remaining buffer
+      if (stdoutBuffer.trim()) {
+        this.logger.log(`[Task ${taskId}] [stdout final] ${stdoutBuffer.substring(0, 300)}`);
+        const event = this.parseStreamLine(stdoutBuffer, taskId);
+        if (event) pushEvent(event);
+      }
+      done = true;
+      if (resolve) {
+        resolve();
+        resolve = null;
+      }
+    });
+
+    stream.on('error', (err) => {
+      this.logger.error(`[Task ${taskId}] Stream error: ${err.message}`);
+      pushEvent({ type: 'error', message: err.message });
+      done = true;
+      if (resolve) {
+        resolve();
+        resolve = null;
+      }
+    });
+
+    // Yield events as they arrive
+    while (true) {
+      if (queue.length > 0) {
+        yield queue.shift()!;
+      } else if (done) {
+        break;
+      } else {
+        // Wait for next event
+        await new Promise<void>((r) => {
+          resolve = r;
+        });
+      }
+    }
   }
 
   private parseStreamLine(line: string, taskId: string): CodingEvent | null {
     try {
       const parsed = JSON.parse(line);
 
-      // stream-json format emits different message types
       if (parsed.type === 'system' && parsed.subtype === 'init') {
         return {
           type: 'session_init',
@@ -278,13 +305,9 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
         }
       }
 
-      // Fallback: output raw line as text
-      this.logger.log(`[Task ${taskId}] [json] ${line.substring(0, 200)}`);
       return null;
     } catch {
-      // Not JSON, output as plain text
       if (line.trim()) {
-        this.logger.log(`[Task ${taskId}] [raw] ${line.substring(0, 200)}`);
         return { type: 'text', content: line };
       }
       return null;
