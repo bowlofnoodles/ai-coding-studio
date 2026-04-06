@@ -119,8 +119,7 @@ export class OrchestratorService {
       for await (const event of this.engineProvider.execute({
         taskId: String(taskId),
         prompt: params.prompt,
-        workDir: sandbox.workDir,
-        apiKey: params.apiKey,
+        sandbox,
       })) {
         this.streamGateway.emitTaskEvent(taskId, event);
         events.push(JSON.stringify(event));
