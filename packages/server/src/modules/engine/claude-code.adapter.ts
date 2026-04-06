@@ -122,18 +122,13 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       const inspect = await exec.inspect();
       this.logger.log(`[Task ${task.taskId}] Claude Code exit code: ${inspect.ExitCode}`);
 
+      // Only emit error if Claude Code exited with non-zero code
+      // Success result is already emitted by Claude Code's own stream-json output
       if (inspect.ExitCode !== 0) {
         yield {
           type: 'error',
           message: `Claude Code exited with code ${inspect.ExitCode}`,
           code: `exit_${inspect.ExitCode}`,
-        };
-      } else {
-        yield {
-          type: 'complete',
-          result: 'AI 编码任务完成',
-          durationMs: 0,
-          costUsd: 0,
         };
       }
 
