@@ -29,6 +29,22 @@ AI Coding Studio 是一个面向前端团队的 Web 平台。产品经理或开�
 - 🧑‍💻 **前端开发者** — 快速迭代"改文案、调样式、加字段"这类小需求
 - 🎨 **产品/设计人员** — 自然语言描述需求，不用等排期，即时看效果
 
+## 🤔 为什么不直接用 GitHub Copilot Workspace / Claude Code？
+
+| | GitHub Copilot Workspace | Claude App (连接 GitHub) | AI Coding Studio |
+|---|---|---|---|
+| **私有部署** | 不支持，SaaS only | 不支持，SaaS only | 可私有部署，代码不出内网 |
+| **内部 Git 平台** | 仅 GitHub | 仅 GitHub | GitHub + GitLab，可扩展 |
+| **AI 引擎** | 仅 Copilot | 仅 Claude | 可插拔（Claude Code、内部 AI 工具） |
+| **发布集成** | 无 | 无 | 内置 CI/CD + CLI 发布，可集成内部发布系统 |
+| **页面内预览** | 有 | 无 | 支持 iframe 预览或变更摘要 |
+| **沙箱环境** | 托管 | 托管 | 自主可控（Docker / 内部沙箱） |
+| **非技术人员** | 需要理解 PR 流程 | 需要理解 GitHub 操作 | 一句话 → 看效果，零门槛 |
+| **定制能力** | 无 | 无 | 通过 CLAUDE.md 定制 AI 行为、Git 工作流 |
+| **成本控制** | GitHub 定价 | Anthropic 定价 | 支持 MiniMax 等第三方代理，自选模型 |
+
+**核心优势：自主可控 + 可定制 + 可集成内部基础设施。** 对于有内部 GitLab、内部发布系统、内部 AI 工具的团队，AI Coding Studio 是一个可以深度定制的自建方案，而不是受限于 SaaS 平台的能力边界。
+
 ## 🖥️ 界面预览
 
 ```
