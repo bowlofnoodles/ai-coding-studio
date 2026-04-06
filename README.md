@@ -33,16 +33,17 @@ AI Coding Studio 是一个面向前端团队的 Web 平台。产品经理或开�
 
 ```
 ┌─ 左侧：对话区 ────────────────┐  ┌─ 右侧：预览区 ────────────┐
-│                                │  │                            │
-│  📦 my-org/web-app             │  │  ┌──────────────────────┐  │
-│  🌿 ai-studio/fix-header       │  │  │                      │  │
-│                                │  │  │   iframe 实时预览      │  │
-│  👤 把 header 改成 48px         │  │  │   修改后的页面效果      │  │
-│                                │  │  │                      │  │
-│  🤖 💭 分析需求...              │  │  └──────────────────────┘  │
-│     🔍 搜索 Header.tsx          │  │                            │
-│     📝 修改 height: 48px       │  │                            │
-│     ✅ 完成，已发布              │  │                            │
+│  平台 GitHub | 引擎 Claude Code │  │                            │
+│                                │  │  ┌──────────────────────┐  │
+│  📦 my-org/web-app             │  │  │                      │  │
+│  🌿 ai-studio/fix-header  ▼   │  │  │   iframe 实时预览      │  │
+│                                │  │  │   修改后的页面效果      │  │
+│  👤 把 header 改成 48px         │  │  │                      │  │
+│                                │  │  └──────────────────────┘  │
+│  🤖 💭 分析需求...              │  │                            │
+│     🔧 Read src/Header.tsx      │  │                            │
+│     🔧 Edit src/Header.tsx      │  │                            │
+│     ✅ 完成 | 18.7s | $0.21    │  │                            │
 │                                │  │                            │
 │  [输入下一个需求...]             │  │                            │
 └────────────────────────────────┘  └────────────────────────────┘
@@ -51,26 +52,40 @@ AI Coding Studio 是一个面向前端团队的 Web 平台。产品经理或开�
 ## ⚡ 核心流程
 
 ```
-💬 输入需求 → 🌿 切分支 → 📦 创建沙箱 → 🤖 AI 编码
-                                              ↓
-         🗑️ 销毁沙箱 ← 👀 预览效果 ← 🚀 自动发布 ← ✅ 提交代码
-                                              ↓
-                                    😐 不满意？继续说 → 🔄 同一分支迭代
+💬 输入需求
+    ↓
+📦 创建沙箱 → git clone 仓库
+    ↓
+🌿 Claude Code 自动创建语义化分支 (ai-studio/fix-header-height)
+   （或 checkout 用户选择的已有分支继续迭代）
+    ↓
+🤖 Claude Code 在沙箱内执行编码任务（通过 CLAUDE.md 约束 git 工作流）
+   ├── 读代码、理解上下文
+   ├── 修改文件          ← WebSocket 实时推送到前端
+   ├── git add + commit
+   └── git push origin HEAD
+    ↓
+🚀 触发发布（CI/CD 或 CLI，可跳过）
+    ↓
+👀 前端 iframe 加载预览 → 🗑️ 销毁沙箱
+    ↓
+😐 不满意？继续输入 → 同一分支迭代（选择已有分支 → 重复上述流程）
 ```
 
-> 💡 **分支是持久的状态载体，沙箱是临时的执行环境。** 任务完成即销毁沙箱，代码保留在分支上。
+> 💡 **分支是持久的状态载体，沙箱是临时的执行环境。** 任务完成即销毁沙箱，代码保留在分支上。Git 操作（创建分支、commit、push）全部由 Claude Code 在沙箱内完成，通过 `CLAUDE.md` 文件约束行为。
 
 ## 🏗️ 架构
 
 ```
 ┌─────────── Frontend (React + Vite) ──────────────────────────┐
-│        仓库选择 ｜ 对话 + 实时执行流 ｜ iframe 预览            │
+│        仓库选择 ｜ 分支选择 ｜ 对话 + 实时执行流 ｜ iframe 预览 │
 └──────────────────────────┬───────────────────────────────────┘
-                      WebSocket
+                      WebSocket (Socket.io)
 ┌──────────────────────────┴───────────────────────────────────┐
 │                    Backend (NestJS)                           │
 │                                                              │
 │   ┌────────────── Task Orchestrator (编排核心) ────────────┐  │
+│   │  clone 仓库 → 写入 CLAUDE.md → 启动 AI → 读取结果     │  │
 │   │                                                        │  │
 │   │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────┐ │  │
 │   │  │   Git   │ │ Sandbox │ │   AI    │ │   Deploy    │ │  │
@@ -82,16 +97,22 @@ AI Coding Studio 是一个面向前端团队的 Web 平台。产品经理或开�
 │   │  └─────────┘ └─────────┘ └─────────┘ └─────────────┘ │  │
 │   └────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
+         │                              │
+    ┌────┴────┐                ┌────────┴────────┐
+    │  MySQL  │                │  临时沙箱容器     │
+    │ 任务记录 │                │  Node.js + Git + │
+    └─────────┘                │  Claude Code CLI │
+                               └─────────────────┘
 ```
 
 **🔌 四层可插拔架构** — 每层通过 Interface + Adapter 模式，可独立替换扩展：
 
 | 层级 | 当前实现 | 可扩展 |
 |------|---------|--------|
-| 🔗 Git Provider | GitHub | GitLab |
-| 📦 Sandbox Provider | Docker | 内部远程沙箱 |
-| 🤖 AI Engine | Claude Code SDK | 内部 AI CLI |
-| 🚀 Deploy Provider | CI/CD / CLI | 其他发布系统 |
+| 🔗 Git Provider | GitHub (Octokit) | GitLab |
+| 📦 Sandbox Provider | Docker (dockerode) | 内部远程沙箱 |
+| 🤖 AI Engine | Claude Code CLI (`-p` + `stream-json`) | 内部 AI CLI |
+| 🚀 Deploy Provider | CI/CD (GitHub Actions) / CLI | 其他发布系统 |
 
 ## 🛠️ 技术栈
 
@@ -99,7 +120,7 @@ AI Coding Studio 是一个面向前端团队的 Web 平台。产品经理或开�
 |---|------|
 | 🖥️ 前端 | React 18 · TypeScript · Vite · Tailwind CSS · shadcn/ui · Zustand · Socket.io |
 | ⚙️ 后端 | NestJS · TypeORM · MySQL · Socket.io · dockerode |
-| 🤖 AI | @anthropic-ai/claude-agent-sdk |
+| 🤖 AI | Claude Code CLI (在沙箱容器内通过 `-p --output-format stream-json` 执行) |
 | 🐳 部署 | Docker · docker-compose · Nginx |
 | 📦 包管理 | pnpm workspace (monorepo) |
 
@@ -113,7 +134,7 @@ AI Coding Studio 是一个面向前端团队的 Web 平台。产品经理或开�
 
 ### 1️⃣ 构建沙箱镜像（只需一次）
 
-沙箱是 AI 编码任务的运行环境，内置 Node.js + Git + Claude Code CLI：
+沙箱是 AI 编码任务的运行环境，内置 Node.js + Git + Claude Code CLI，以非 root 用户 (`coder`) 运行：
 
 ```bash
 docker build -f docker/sandbox.Dockerfile -t ai-coding-studio-sandbox:latest .
@@ -133,8 +154,8 @@ pnpm install
 
 # 启动后端（终端 1）
 cd packages/server
-cp .env.example .env
-pnpm start:dev
+cp .env.example .env   # 必须配置 Claude Code 凭据，见下方环境变量说明
+pnpm start:dev         # nodemon + ts-node，文件变化自动重启
 
 # 启动前端（终端 2）
 cd packages/web
@@ -150,7 +171,7 @@ pnpm dev
 
 ```bash
 cd docker
-cp .env.example .env
+cp .env.example .env   # 必须配置 Claude Code 凭据
 docker compose up -d
 ```
 
@@ -167,9 +188,10 @@ docker compose down              # 停止
 
 ### 3️⃣ 开始使用
 
-1. 📋 打开「设置」页 → 注册用户 → 配置 Git Token
-2. 🏠 回到「工作区」→ 选择仓库 → 输入需求
-3. 👀 观察 AI 实时执行过程 → 预览效果 → 继续迭代
+1. 📋 打开「设置」页 → 注册用户 → 配置 GitHub Token
+2. 🏠 回到「工作区」→ 选择仓库 → 选择分支（或留空自动创建）→ 输入需求
+3. 👀 实时观察 AI 思考、搜索、编辑文件 → 自动 commit & push
+4. 🔄 不满意？选择同一分支继续输入 → AI 在已有代码基础上迭代
 
 ## 📁 项目结构
 
@@ -179,27 +201,34 @@ ai-coding-studio/
 │   ├── 📂 web/               # 前端 React 应用
 │   │   └── src/
 │   │       ├── pages/        # 工作区 · 设置 · 历史
-│   │       ├── stores/       # 状态管理 (Zustand)
-│   │       ├── hooks/        # WebSocket Hook
+│   │       ├── stores/       # 状态管理 (Zustand: user, workspace)
+│   │       ├── hooks/        # useSocket (WebSocket 事件监听)
+│   │       ├── lib/          # API 客户端 · cn 工具函数
 │   │       └── components/   # UI 组件 (shadcn/ui)
 │   ├── 📂 server/            # 后端 NestJS 服务
-│   │   └── src/modules/
-│   │       ├── auth/         # 用户认证
-│   │       ├── git-provider/ # Git 平台对接
-│   │       ├── sandbox/      # 沙箱管理
-│   │       ├── engine/       # AI 引擎
-│   │       ├── deploy/       # 发布管理
-│   │       ├── task/         # 任务编排 (Orchestrator)
-│   │       └── stream/       # WebSocket 推送
-│   └── 📂 shared/            # 共享类型和常量
-└── 📂 docker/                # Docker 配置
-    ├── sandbox.Dockerfile    # 沙箱镜像
+│   │   ├── src/
+│   │   │   ├── entities/     # TypeORM 实体 (User, Task, TaskMessage)
+│   │   │   └── modules/
+│   │   │       ├── auth/         # 用户注册、登录、配置
+│   │   │       ├── git-provider/ # Git 平台 (仓库列表、分支列表)
+│   │   │       ├── sandbox/      # 沙箱容器生命周期 (Docker)
+│   │   │       ├── engine/       # AI 引擎 (Claude Code stream-json)
+│   │   │       ├── deploy/       # 发布 (CI/CD + CLI)
+│   │   │       ├── task/         # Orchestrator + 任务 CRUD
+│   │   │       └── stream/       # WebSocket 网关
+│   │   └── logs/             # Claude Code 原始 stream-json 日志
+│   └── 📂 shared/            # 共享类型 (CodingEvent, TaskStatus...)
+└── 📂 docker/
+    ├── sandbox.Dockerfile    # 沙箱镜像 (Node.js + Git + Claude Code + coder 用户)
     ├── server.Dockerfile     # 后端镜像
-    ├── web.Dockerfile        # 前端镜像
-    └── docker-compose.yml    # 服务编排
+    ├── web.Dockerfile        # 前端镜像 + Nginx
+    ├── nginx.conf            # SPA + API/WS 反向代理
+    └── docker-compose.yml    # 服务编排 (mysql + server + web)
 ```
 
 ## ⚙️ 环境变量
+
+### 数据库 & 沙箱
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
@@ -208,7 +237,34 @@ ai-coding-studio/
 | `DB_USERNAME` | `root` | MySQL 用户名 |
 | `DB_PASSWORD` | `root` | MySQL 密码 |
 | `DB_DATABASE` | `ai_coding_studio` | 数据库名 |
-| `SANDBOX_IMAGE` | `ai-coding-studio-sandbox:latest` | 沙箱镜像名称 |
+| `SANDBOX_IMAGE` | `ai-coding-studio-sandbox:latest` | 沙箱 Docker 镜像 |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket 路径（Rancher Desktop 用 `~/.rd/docker.sock`） |
+
+### Claude Code 凭据（二选一）
+
+**直接使用 Anthropic API：**
+
+| 变量 | 说明 |
+|------|------|
+| `ANTHROPIC_API_KEY` | Anthropic API Key |
+
+**通过 MiniMax 代理：**
+
+| 变量 | 值 |
+|------|------|
+| `ANTHROPIC_BASE_URL` | `https://api.minimaxi.com/anthropic` |
+| `ANTHROPIC_AUTH_TOKEN` | MiniMax API Key |
+| `ANTHROPIC_MODEL` | `MiniMax-M2.7` |
+| `ANTHROPIC_SMALL_FAST_MODEL` | `MiniMax-M2.7` |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | `MiniMax-M2.7` |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | `MiniMax-M2.7` |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `MiniMax-M2.7` |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` |
+| `API_TIMEOUT_MS` | `3000000` |
+
+## 🔍 调试
+
+每次任务执行会将 Claude Code 的原始 `stream-json` 输出保存到 `packages/server/logs/task-{id}-{timestamp}.jsonl`，可用于排查 AI 执行细节。
 
 ## 📄 License
 
