@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import Docker from 'dockerode';
 import { SandboxProvider, Sandbox, ExecResult } from './sandbox.interface';
 
@@ -9,17 +10,29 @@ const DEFAULT_TIMEOUT = 600_000; // 10 minutes
 export class DockerAdapter implements SandboxProvider {
   private readonly logger = new Logger(DockerAdapter.name);
   private docker: Docker;
+  private readonly defaultImage: string;
 
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
     this.docker = new Docker();
+    this.defaultImage = this.configService.get<string>('SANDBOX_IMAGE', DEFAULT_IMAGE);
   }
 
   async create(config: {
     image?: string;
     timeout?: number;
   }): Promise<Sandbox> {
-    const image = config.image ?? DEFAULT_IMAGE;
+    const image = config.image ?? this.defaultImage;
     const workDir = '/workspace';
+
+    // Check if image exists locally
+    try {
+      await this.docker.getImage(image).inspect();
+    } catch {
+      throw new Error(
+        `Sandbox image "${image}" not found locally. ` +
+        `Please build it first: docker build -f docker/sandbox.Dockerfile -t ${image} .`,
+      );
+    }
 
     const container = await this.docker.createContainer({
       Image: image,
