@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(pnpm install:*)",
+      "Bash(git commit:*)",
+      "Bash(git:*)",
+      "Bash(pnpm build:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(npx tsc:*)",
+      "Bash(timeout 15 npx vite --host 0.0.0.0)",
+      "Bash(npx vite:*)",
+      "Bash(pnpm build:shared)",
+      "WebSearch",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(xxd)",
+      "Bash(pnpm add:*)",
+      "Bash(node -e \"require\\('./packages/server/node_modules/@octokit/rest'\\)\")",
+      "Bash(npx shadcn@latest add button -y)",
+      "Bash(npx shadcn@latest add input -y)",
+      "Bash(npx shadcn@latest add select -y)",
+      "Bash(npx shadcn@latest add card -y)",
+      "Bash(npx shadcn@latest add scroll-area -y)",
+      "Bash(npx shadcn@latest add badge -y)",
+      "Bash(npx shadcn@latest add separator -y)",
+      "Bash(ls packages/*/package.json)",
+      "Bash(npx nest:*)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npx ts-node:*)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(curl -s http://localhost:3001/api/repos?userId=3)",
+      "Bash(docker compose:*)",
+      "Bash(docker context:*)",
+      "WebFetch(domain:platform.minimaxi.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:code.visualstudio.com)"
+    ]
+  }
+}

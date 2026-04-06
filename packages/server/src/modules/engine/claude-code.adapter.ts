@@ -112,7 +112,7 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
 
       const stream = await exec.start({ Detach: false, Tty: false });
 
-      yield { type: 'thinking', content: '正在执行 AI 编码任务...' };
+      yield { type: 'thinking', content: '正在执行任务...' };
 
       // Real-time streaming via async generator
       for await (const event of this.streamEvents(stream, task.taskId)) {
