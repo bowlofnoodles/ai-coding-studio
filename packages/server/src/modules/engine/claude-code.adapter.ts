@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import Docker from 'dockerode';
 import { CodingEvent } from '@ai-coding-studio/shared';
 import { AIEngineProvider, CodingTask } from './engine.interface';
@@ -182,6 +184,13 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       }
     };
 
+    // Write raw stream-json to log file for debugging
+    const logsDir = path.resolve(process.cwd(), 'logs');
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+    const logFile = path.join(logsDir, `task-${taskId}-${Date.now()}.jsonl`);
+    const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+    this.logger.log(`[Task ${taskId}] Raw stream-json log: ${logFile}`);
+
     const processPayload = (payload: string) => {
       stdoutBuffer += payload;
       const lines = stdoutBuffer.split('\n');
@@ -189,6 +198,7 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
 
       for (const line of lines) {
         if (!line.trim()) continue;
+        logStream.write(line + '\n');
         this.logger.log(`[Task ${taskId}] [stdout] ${line.substring(0, 300)}`);
         const events = this.parseStreamLine(line, taskId);
         for (const event of events) pushEvent(event);
@@ -217,12 +227,13 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
     });
 
     stream.on('end', () => {
-      // Process remaining buffer
       if (stdoutBuffer.trim()) {
+        logStream.write(stdoutBuffer + '\n');
         this.logger.log(`[Task ${taskId}] [stdout final] ${stdoutBuffer.substring(0, 300)}`);
         const events = this.parseStreamLine(stdoutBuffer, taskId);
         for (const event of events) pushEvent(event);
       }
+      logStream.end();
       done = true;
       if (resolve) {
         resolve();
