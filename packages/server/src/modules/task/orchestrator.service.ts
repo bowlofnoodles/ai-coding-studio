@@ -80,6 +80,9 @@ export class OrchestratorService {
       apiKey: string;
     },
   ): Promise<void> {
+    // Wait briefly for the client to subscribe to the WebSocket room
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     let sandbox: Sandbox | null = null;
 
     try {

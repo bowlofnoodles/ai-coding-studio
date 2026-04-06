@@ -91,7 +91,8 @@ export function WorkspacePage() {
           apiKey: '',
         });
 
-        // Subscribe to this task's WebSocket events
+        // Subscribe immediately, don't wait for useEffect
+        subscribe(result.taskId);
         setCurrentTask(result.taskId);
       } catch (err) {
         setError(err instanceof Error ? err.message : '任务提交失败');
