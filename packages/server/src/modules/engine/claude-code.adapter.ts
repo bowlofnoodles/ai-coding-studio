@@ -41,18 +41,21 @@ export class ClaudeCodeAdapter implements AIEngineProvider {
       this.claudeModel = model;
       this.claudeEnv.push(`ANTHROPIC_MODEL=${model}`);
       this.claudeEnv.push(`ANTHROPIC_SMALL_FAST_MODEL=${model}`);
+      this.claudeEnv.push(`ANTHROPIC_DEFAULT_SONNET_MODEL=${model}`);
+      this.claudeEnv.push(`ANTHROPIC_DEFAULT_OPUS_MODEL=${model}`);
+      this.claudeEnv.push(`ANTHROPIC_DEFAULT_HAIKU_MODEL=${model}`);
     }
 
-    // Disable non-essential traffic (recommended for proxy usage)
-    const disableTraffic = this.configService.get<string>('CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', '');
-    if (disableTraffic) {
-      this.claudeEnv.push(`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=${disableTraffic}`);
-    }
-
-    // API timeout
-    const timeout = this.configService.get<string>('API_TIMEOUT_MS', '');
-    if (timeout) {
-      this.claudeEnv.push(`API_TIMEOUT_MS=${timeout}`);
+    // Pass through all optional Claude Code env vars
+    const envPassthrough = [
+      'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
+      'API_TIMEOUT_MS',
+    ];
+    for (const key of envPassthrough) {
+      const val = this.configService.get<string>(key, '');
+      if (val) {
+        this.claudeEnv.push(`${key}=${val}`);
+      }
     }
   }
 
