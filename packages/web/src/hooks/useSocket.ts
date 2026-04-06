@@ -21,6 +21,12 @@ interface TaskError {
   timestamp: number;
 }
 
+interface TaskBranch {
+  taskId: number;
+  branchName: string;
+  timestamp: number;
+}
+
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
 
@@ -73,5 +79,15 @@ export function useSocket() {
     [],
   );
 
-  return { subscribe, unsubscribe, onTaskEvent, onTaskStatus, onTaskError };
+  const onTaskBranch = useCallback(
+    (callback: (data: TaskBranch) => void) => {
+      socketRef.current?.on('task:branch', callback);
+      return () => {
+        socketRef.current?.off('task:branch', callback);
+      };
+    },
+    [],
+  );
+
+  return { subscribe, unsubscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch };
 }

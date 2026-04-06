@@ -8,8 +8,10 @@ export function RepoSelector() {
   const repos = useWorkspaceStore((s) => s.repos);
   const selectedRepo = useWorkspaceStore((s) => s.selectedRepo);
   const branchName = useWorkspaceStore((s) => s.branchName);
+  const isExecuting = useWorkspaceStore((s) => s.isExecuting);
   const setRepos = useWorkspaceStore((s) => s.setRepos);
   const selectRepo = useWorkspaceStore((s) => s.selectRepo);
+  const setBranchName = useWorkspaceStore((s) => s.setBranchName);
 
   useEffect(() => {
     if (userId) {
@@ -28,6 +30,7 @@ export function RepoSelector() {
             const repo = repos.find((r) => r.fullName === e.target.value);
             if (repo) selectRepo(repo);
           }}
+          disabled={isExecuting}
         >
           <option value="">选择仓库...</option>
           {repos.map((repo) => (
@@ -40,19 +43,22 @@ export function RepoSelector() {
       {selectedRepo && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500 w-8 shrink-0">分支</span>
-          {branchName ? (
-            <>
-              <span className="text-sm text-purple-400 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5">
-                {branchName}
-              </span>
-              <span className="text-xs text-gray-600">
-                ← 从 {selectedRepo.defaultBranch} 切出
-              </span>
-            </>
-          ) : (
-            <span className="text-xs text-gray-500">
-              提交任务时自动从 {selectedRepo.defaultBranch} 创建
-            </span>
+          <input
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm text-gray-200 outline-none focus:border-purple-500 placeholder-gray-500"
+            placeholder="留空则自动生成语义化分支名"
+            value={branchName}
+            onChange={(e) => setBranchName(e.target.value)}
+            disabled={isExecuting}
+          />
+          {branchName && (
+            <button
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              onClick={() => setBranchName('')}
+              disabled={isExecuting}
+              title="清空，提交时自动生成"
+            >
+              清空
+            </button>
           )}
         </div>
       )}

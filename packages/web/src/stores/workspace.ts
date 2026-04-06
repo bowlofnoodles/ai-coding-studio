@@ -16,7 +16,6 @@ interface WorkspaceState {
   setRepos: (repos: Repo[]) => void;
   selectRepo: (repo: Repo) => void;
   setBranchName: (name: string) => void;
-  ensureBranchName: () => string;
 
   currentTaskId: number | null;
   taskStatus: string | null;
@@ -47,14 +46,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   setBranchName: (branchName) => set({ branchName }),
-  // Generate branch name only once per session, reuse on subsequent calls
-  ensureBranchName: () => {
-    const state = get();
-    if (state.branchName) return state.branchName;
-    const name = `ai-studio/${Date.now()}`;
-    set({ branchName: name });
-    return name;
-  },
 
   currentTaskId: null,
   taskStatus: null,

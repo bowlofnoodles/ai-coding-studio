@@ -49,6 +49,10 @@ export class TaskService {
     });
   }
 
+  async updateBranchName(id: number, branchName: string): Promise<void> {
+    await this.taskRepo.update(id, { branchName });
+  }
+
   async updateStatus(
     id: number,
     status: string,

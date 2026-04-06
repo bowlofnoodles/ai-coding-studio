@@ -15,12 +15,13 @@ interface Message {
 export function WorkspacePage() {
   const userId = useUserStore((s) => s.userId);
   const selectedRepo = useWorkspaceStore((s) => s.selectedRepo);
+  const branchName = useWorkspaceStore((s) => s.branchName);
   const currentTaskId = useWorkspaceStore((s) => s.currentTaskId);
   const isExecuting = useWorkspaceStore((s) => s.isExecuting);
   const previewUrl = useWorkspaceStore((s) => s.previewUrl);
   const error = useWorkspaceStore((s) => s.error);
 
-  const ensureBranchName = useWorkspaceStore((s) => s.ensureBranchName);
+  const setBranchName = useWorkspaceStore((s) => s.setBranchName);
   const setCurrentTask = useWorkspaceStore((s) => s.setCurrentTask);
   const setTaskStatus = useWorkspaceStore((s) => s.setTaskStatus);
   const addEvent = useWorkspaceStore((s) => s.addEvent);
@@ -31,7 +32,7 @@ export function WorkspacePage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const lastPromptRef = useRef<string>('');
-  const { subscribe, onTaskEvent, onTaskStatus, onTaskError } = useSocket();
+  const { subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch } = useSocket();
 
   // Subscribe to task events when taskId changes
   useEffect(() => {
@@ -64,12 +65,19 @@ export function WorkspacePage() {
       }
     });
 
+    const unsub4 = onTaskBranch((data) => {
+      if (data.taskId === currentTaskId) {
+        setBranchName(data.branchName);
+      }
+    });
+
     return () => {
       unsub1();
       unsub2();
       unsub3();
+      unsub4();
     };
-  }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting]);
+  }, [currentTaskId, subscribe, onTaskEvent, onTaskStatus, onTaskError, onTaskBranch, addEvent, setTaskStatus, setPreviewUrl, setError, setIsExecuting, setBranchName]);
 
   const executeTask = useCallback(
     async (prompt: string) => {
@@ -80,19 +88,17 @@ export function WorkspacePage() {
       setIsExecuting(true);
 
       try {
-        const branch = ensureBranchName();
         const result = await api.tasks.execute({
           userId,
           repoUrl: selectedRepo.cloneUrl,
           repoFullName: selectedRepo.fullName,
-          branchName: branch,
+          branchName, // empty string = backend auto-generates
           baseBranch: selectedRepo.defaultBranch,
           prompt,
-          previewUrlTemplate: `https://${branch}.preview.example.com`,
+          previewUrlTemplate: `https://${branchName || 'preview'}.preview.example.com`,
           apiKey: '',
         });
 
-        // Subscribe immediately, don't wait for useEffect
         subscribe(result.taskId);
         setCurrentTask(result.taskId);
       } catch (err) {
@@ -100,7 +106,7 @@ export function WorkspacePage() {
         setIsExecuting(false);
       }
     },
-    [userId, selectedRepo, ensureBranchName, resetExecution, setIsExecuting, setError, setCurrentTask, subscribe],
+    [userId, selectedRepo, branchName, resetExecution, setIsExecuting, setError, setCurrentTask, subscribe],
   );
 
   const handleSubmit = useCallback(

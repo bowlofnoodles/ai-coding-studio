@@ -101,34 +101,63 @@ export class OrchestratorService {
       sandbox = await this.sandboxProvider.create({});
       this.logger.log(`[Task ${taskId}] Sandbox created: ${sandbox.id.substring(0, 12)}`);
 
-      // 3. Clone repo and setup branch inside sandbox
+      // 3. Clone repo into sandbox
       this.logger.log(`[Task ${taskId}] Cloning repo into sandbox...`);
 
-      // Construct authenticated clone URL
       const authedUrl = params.repoUrl.replace(
         'https://',
         `https://x-access-token:${user.gitToken}@`,
       );
 
-      // Clone the repo (default branch first)
       const cloneResult = await this.sandboxProvider.exec(
         sandbox,
         `git clone ${authedUrl} . 2>&1`,
       );
       this.logger.log(`[Task ${taskId}] Clone result (exit ${cloneResult.exitCode}): ${cloneResult.stdout.substring(0, 200)}`);
 
-      // Try to checkout existing branch, or create new one from base
-      const checkoutResult = await this.sandboxProvider.exec(
-        sandbox,
-        `git checkout ${params.branchName} 2>&1 || git checkout -b ${params.branchName} origin/${params.baseBranch} 2>&1`,
-      );
-      this.logger.log(`[Task ${taskId}] Checkout result (exit ${checkoutResult.exitCode}): ${checkoutResult.stdout.substring(0, 200)}`);
-
       // Configure git user for commits
       await this.sandboxProvider.exec(
         sandbox,
         'git config user.email "ai-coding-studio@bot" && git config user.name "AI Coding Studio"',
       );
+
+      // 4. Determine branch name
+      let branchName = params.branchName;
+
+      if (!branchName) {
+        // Generate semantic branch name using Claude inside sandbox
+        this.logger.log(`[Task ${taskId}] Generating branch name from prompt...`);
+        const genResult = await this.sandboxProvider.exec(
+          sandbox,
+          `claude -p "Based on this task description, generate a short git branch name (lowercase, hyphens, no spaces, max 40 chars, prefix with ai-studio/). Task: ${params.prompt.replace(/"/g, '\\"').substring(0, 200)}. Reply with ONLY the branch name, nothing else." --dangerously-skip-permissions --max-turns 1 2>&1 | tail -1`,
+        );
+        const generated = genResult.stdout.trim();
+        if (generated && generated.startsWith('ai-studio/') && !generated.includes(' ')) {
+          branchName = generated;
+        } else {
+          // Fallback: simple slug from prompt
+          const slug = params.prompt
+            .replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '-')
+            .replace(/-+/g, '-')
+            .substring(0, 30)
+            .replace(/-$/, '');
+          branchName = `ai-studio/${slug || Date.now()}`;
+        }
+        this.logger.log(`[Task ${taskId}] Generated branch name: ${branchName}`);
+
+        // Update task record with the generated branch name
+        await this.taskService.updateBranchName(taskId, branchName);
+
+        // Notify frontend of the branch name
+        this.streamGateway.emitTaskBranchName(taskId, branchName);
+      }
+
+      // 5. Checkout branch (existing or new)
+      const checkoutResult = await this.sandboxProvider.exec(
+        sandbox,
+        `git checkout ${branchName} 2>&1 || git checkout -b ${branchName} origin/${params.baseBranch} 2>&1`,
+      );
+      this.logger.log(`[Task ${taskId}] Checkout result (exit ${checkoutResult.exitCode}): ${checkoutResult.stdout.substring(0, 200)}`);
 
       // 5. Execute AI coding task
       await this.taskService.updateStatus(taskId, TaskStatus.EXECUTING);
@@ -164,7 +193,7 @@ export class OrchestratorService {
         this.logger.log(`[Task ${taskId}] Changes detected, committing and pushing...`);
         const pushResult = await this.sandboxProvider.exec(
           sandbox,
-          `git add -A && git diff --cached --stat && git commit -m "ai-coding-studio: ${params.prompt.substring(0, 60)}" && git push origin ${params.branchName} 2>&1`,
+          `git add -A && git diff --cached --stat && git commit -m "ai-coding-studio: ${params.prompt.substring(0, 60)}" && git push origin ${branchName} 2>&1`,
         );
         this.logger.log(`[Task ${taskId}] Push result (exit ${pushResult.exitCode}): ${pushResult.stdout.substring(0, 300)}`);
         if (pushResult.stderr) {

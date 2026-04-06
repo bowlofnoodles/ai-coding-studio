@@ -48,6 +48,14 @@ export class StreamGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  emitTaskBranchName(taskId: number, branchName: string) {
+    this.server.to(`task:${taskId}`).emit('task:branch', {
+      taskId,
+      branchName,
+      timestamp: Date.now(),
+    });
+  }
+
   emitTaskStatus(taskId: number, status: string, previewUrl?: string) {
     this.server.to(`task:${taskId}`).emit('task:status', {
       taskId,
