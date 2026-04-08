@@ -2,7 +2,9 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { TaskStatus } from '@ai-coding-studio/shared';
 import { TaskService } from './task.service';
 import { StreamGateway } from '../stream';
-import { GIT_PROVIDER_TOKEN, GitHubAdapter } from '../git-provider';
+import { GIT_PROVIDER_TOKEN } from '../git-provider';
+import type { GitProvider } from '../git-provider';
+import { GitProviderFactory } from '../git-provider/git-provider.factory';
 import {
   SANDBOX_PROVIDER_TOKEN,
   SandboxProvider,
@@ -25,8 +27,9 @@ export class OrchestratorService {
     private readonly taskService: TaskService,
     private readonly authService: AuthService,
     private readonly streamGateway: StreamGateway,
+    private readonly gitProviderFactory: GitProviderFactory,
     @Inject(GIT_PROVIDER_TOKEN)
-    private readonly gitProvider: GitHubAdapter,
+    private readonly gitProvider: GitProvider,
     @Inject(SANDBOX_PROVIDER_TOKEN)
     private readonly sandboxProvider: SandboxProvider,
     @Inject(AI_ENGINE_PROVIDER_TOKEN)
@@ -104,9 +107,11 @@ export class OrchestratorService {
       // 3. Clone repo into sandbox
       this.logger.log(`[Task ${taskId}] Cloning repo into sandbox...`);
 
+      const platform = user.gitPlatform ?? 'github';
+      const tokenPrefix = platform === 'gitlab' ? 'oauth2' : 'x-access-token';
       const authedUrl = params.repoUrl.replace(
         'https://',
-        `https://x-access-token:${user.gitToken}@`,
+        `https://${tokenPrefix}:${user.gitToken}@`,
       );
 
       const cloneResult = await this.sandboxProvider.exec(

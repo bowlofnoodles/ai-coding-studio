@@ -6,13 +6,13 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { GitHubAdapter } from './github.adapter';
+import { GitProviderFactory } from './git-provider.factory';
 import { AuthService } from '../auth';
 
 @Controller('repos')
 export class GitProviderController {
   constructor(
-    private readonly gitHubAdapter: GitHubAdapter,
+    private readonly gitProviderFactory: GitProviderFactory,
     private readonly authService: AuthService,
   ) {}
 
@@ -31,8 +31,11 @@ export class GitProviderController {
       throw new BadRequestException('Git token not configured');
     }
 
-    this.gitHubAdapter.configure(user.gitToken);
-    return this.gitHubAdapter.listRepos();
+    const provider = this.gitProviderFactory.create(
+      user.gitPlatform,
+      user.gitToken,
+    );
+    return provider.listRepos();
   }
 
   @Get('branches')
@@ -49,7 +52,10 @@ export class GitProviderController {
       throw new NotFoundException('User not found');
     }
 
-    this.gitHubAdapter.configure(user.gitToken);
-    return this.gitHubAdapter.listBranches(repoFullName);
+    const provider = this.gitProviderFactory.create(
+      user.gitPlatform,
+      user.gitToken,
+    );
+    return provider.listBranches(repoFullName);
   }
 }
