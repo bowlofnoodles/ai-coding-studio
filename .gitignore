@@ -5,3 +5,4 @@ dist/
 *.log
 .superpowers/
 packages/server/logs
+*.tsbuildinfo
